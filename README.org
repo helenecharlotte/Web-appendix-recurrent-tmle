@@ -19,12 +19,11 @@ simulation setting. For example, to simulate a dataset with sample
 size =n= = 200 from simulation setting 1A:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
-#+BEGIN_SRC R  :results both :exports results  :session *R* :cache yes  
+#+BEGIN_SRC R  :results both :exports both  :session *R* :cache yes  
 sim.dt <- sim.data.outer(n = 200, sim.setting = "1A", cens.percentage = "low", seed = 200)
 sim.dt 
 #+END_SRC 
 
-#+RESULTS[(2024-10-14 14:58:40) 631a0f24b3cdaf915d0986e100e7fcfca71dfd4b]:
 #+begin_example
        id      time delta A         L1        L2        L3
    1:   1 1.1422261     0 1  0.0675449 0.8507853 0.1815996

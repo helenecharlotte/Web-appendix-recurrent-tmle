@@ -8,7 +8,7 @@ This is the web appendix to our manuscript entitled /Nonparametric/
 ** Dependencies
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
-#+BEGIN_SRC R  :results output :exports results  :session *R* :cache yes  
+#+BEGIN_SRC R  :results code :exports code  :session *R* :cache yes  
 library(data.table)
 #+END_SRC 
 
@@ -19,7 +19,7 @@ simulation setting. For example, to simulate a dataset with sample
 size =n= = 200 from simulation setting 1A:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
-#+BEGIN_SRC R  :results output :exports results  :session *R* :cache yes  
+#+BEGIN_SRC R  :results both :exports results  :session *R* :cache yes  
 sim.dt <- sim.data.outer(n = 200, sim.setting = "1A", cens.percentage = "low", seed = 200)
 sim.dt 
 #+END_SRC 

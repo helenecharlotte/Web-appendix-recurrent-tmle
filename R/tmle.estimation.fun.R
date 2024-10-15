@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (10:50) 
+## Last-Updated: Oct 15 2024 (11:29) 
 ##           By: Helene
-##     Update #: 143
+##     Update #: 153
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -47,7 +47,7 @@ tmle.est.fun <- function(dt,
 
     n <- length(unique(dt[["id"]]))
 
-    #-- if no "fit" is specified, then specify it is a cox model: 
+    #-- if no "fit" is specified, then specify it as cox: 
     if (!is.list(fit.type1)) {
         fit.type1 <- list(model = fit.type1, fit = "cox")
     }
@@ -60,6 +60,12 @@ tmle.est.fun <- function(dt,
         fit.type0 <- list(model = fit.type0, fit = "cox")
     }
 
+    #-- if no "fit" is specified for treatment model, then specify it as glm: 
+    if (!is.list(fit.treatment)) {
+        fit.treatment <- list(model = fit.treatment, fit = "glm")
+    }
+
+    
     #-- covariates/predictors extracted from models: 
     varnames <- unique(unlist(lapply(list(fit.type1[["model"]], fit.type2[["model"]], fit.type0[["model"]], fit.treatment[["model"]]), function(fit.type) {
         strsplit(strsplit(fit.type, "~")[[1]][2], "\\+|\\*")[[1]]
@@ -91,10 +97,12 @@ tmle.est.fun <- function(dt,
     #--------------------------------
     #-- "G-part"; for clever weight estimation:
     # (we start with cox models, if HAL is specified this is fitted later)
-    fit.cox0 <- coxph(as.formula(fit.type0[["model"]]), data = dt)
+    fit.cox0 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type0[["model"]])), data = dt)
+    if (verbose) print(fit.cox0)
     dt[, idN := 1:.N, by = "id"]
     if (fit.treatment[["fit"]] == "glm") {
         fitA <- glm(as.formula(fit.treatment[["model"]]), data=dt[idN == 1], family=binomial)
+        if (verbose) print(summary(fitA))
     } else {
         print("NB: need to incorporate other estimations methods than glm for treatment")
     }
@@ -444,6 +452,7 @@ tmle.est.fun <- function(dt,
         print(tmp3[time <= final.time, summary(clever.weight)])
         print(tmp3[time <= final.time, summary(surv0)])
         print(tmp3[clever.weight>0 & time <= final.time, summary(clever.weight)])
+        print("--------------------------------------------")
     }
 
     #--------------------------------    

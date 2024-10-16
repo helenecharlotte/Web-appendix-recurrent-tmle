@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (11:29) 
+## Last-Updated: Oct 16 2024 (12:47) 
 ##           By: Helene
-##     Update #: 153
+##     Update #: 266
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -64,12 +64,17 @@ tmle.est.fun <- function(dt,
     if (!is.list(fit.treatment)) {
         fit.treatment <- list(model = fit.treatment, fit = "glm")
     }
-
     
     #-- covariates/predictors extracted from models: 
     varnames <- unique(unlist(lapply(list(fit.type1[["model"]], fit.type2[["model"]], fit.type0[["model"]], fit.treatment[["model"]]), function(fit.type) {
         strsplit(strsplit(fit.type, "~")[[1]][2], "\\+|\\*")[[1]]
     })))
+
+    if ("Y.dummy." %in% substr(varnames,1,nchar("Y.dummy."))) {
+        Y.dummy.max <- max(as.numeric(gsub("Y.dummy.", "", varnames[substr(varnames,1,nchar("Y.dummy.")) == "Y.dummy."])))
+    } else {
+        Y.dummy.max <- NULL
+    }
 
     varnames <- varnames[varnames != "1"]
     varnames <- varnames[!(varnames %in% grep(">=", varnames, value = TRUE))]
@@ -92,6 +97,9 @@ tmle.est.fun <- function(dt,
     dt[, Y.1 := c(0, Y[-.N]), by = "id"]
     dt[, Y.dummy := (Y.1>0)]
     dt[, Y3.dummy := (Y.1 >= 3)]
+    if (length(Y.dummy.max)>0) {
+        dt[, (paste0("Y.dummy.", Y.dummy.max)) := factor(findInterval(Y.1, 0:Y.dummy.max))]
+    }
     dt[, Y.time := time-tstart, by = "id"]
 
     #--------------------------------
@@ -115,6 +123,8 @@ tmle.est.fun <- function(dt,
     fit.cox2 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type2[["model"]])), data = dt)
     if (verbose) print(fit.cox1)
     if (verbose) print(fit.cox2)
+
+    browser()
 
     #-- with dependence on Y.time>t0: 
     if ("t0" %in% names(fit.type1)) {
@@ -179,6 +189,9 @@ tmle.est.fun <- function(dt,
     tmp3[, Y.1 := c(0, Y[-.N]), by = "id"]
     tmp3[, Y.dummy := (Y.1>0)]
     tmp3[, Y3.dummy := (Y.1 >= 3)]
+    if (length(Y.dummy.max)>0) {
+        tmp3[, (paste0("Y.dummy.", Y.dummy.max)) := factor(findInterval(Y.1, 0:Y.dummy.max))]
+    }
     tmp3[, Y.time := time-c(0, time.obs.last[-.N]), by = "id"]
     tmp3[Y.dummy == 0, Y.time := 0]
     tmp3[, final.time := max(time.obs), by = "id"]
@@ -367,23 +380,44 @@ tmle.est.fun <- function(dt,
 
         #-- NB: remember that this faster version currently only works with "Y.dummy" dependence
 
-        tmp3[, Y1 := (Y >= 1)*Y+(Y == 0)*1]
-        tmp3.Y1 <- copy(tmp3)
-        tmp3.Y0 <- copy(tmp3)
-        tmp3.Y1[, Y.dummy := 1]
-        tmp3.Y0[, Y.dummy := 0]
+        if (length(Y.dummy.max)>0) { #-- to handle effect of Y.1  (no of jumps in the past)
 
-        tmp3[, exp1.Y1 := exp(predict(fit.cox1, newdata=tmp3.Y1, type="lp"))]
-        tmp3[, exp1.Y0 := exp(predict(fit.cox1, newdata=tmp3.Y0, type="lp"))]
+            index.j <- sort(unique(tmp3[[paste0("Y.dummy.", Y.dummy.max)]]))
+            index.j1 <- factor(sapply(as.numeric(index.j)+1, function(ij) min(ij, max(as.numeric(index.j)))))
 
-        tmp3[, exp2.Y1 := exp(predict(fit.cox2, newdata=tmp3.Y1, type="lp"))]
-        tmp3[, exp2.Y0 := exp(predict(fit.cox2, newdata=tmp3.Y0, type="lp"))]
+            for (kY in index.j) {
 
-        tmp3[, P1.Y1 := dhazard1*exp1.Y1]
-        tmp3[, P1.Y0 := dhazard1*exp1.Y0]
+                tmp3.Y.kY <- copy(tmp3)[, (paste0("Y.dummy.", Y.dummy.max)) := kY]
 
-        tmp3[, P2.Y1 := dhazard2*exp2.Y1]
-        tmp3[, P2.Y0 := dhazard2*exp2.Y0]
+                tmp3[, (paste0("exp1.Y", kY)) := exp(predict(fit.cox1, newdata=tmp3.Y.kY, type="lp"))]
+                tmp3[, (paste0("exp2.Y", kY)) := exp(predict(fit.cox2, newdata=tmp3.Y.kY, type="lp"))]                
+
+                tmp3[, (paste0("P1.Y", kY)) := dhazard1*get(paste0("exp1.Y", kY))]
+                tmp3[, (paste0("P2.Y", kY)) := dhazard2*get(paste0("exp2.Y", kY))]
+                
+            }
+            
+        } else {  #-- to handle only effect of Y.dummy (jump or not in the past)
+        
+            tmp3[, Y1 := (Y >= 1)*Y+(Y == 0)*1]
+            tmp3.Y1 <- copy(tmp3)
+            tmp3.Y0 <- copy(tmp3)
+            tmp3.Y1[, Y.dummy := 1]
+            tmp3.Y0[, Y.dummy := 0]
+
+            tmp3[, exp1.Y1 := exp(predict(fit.cox1, newdata=tmp3.Y1, type="lp"))]
+            tmp3[, exp1.Y0 := exp(predict(fit.cox1, newdata=tmp3.Y0, type="lp"))]
+
+            tmp3[, exp2.Y1 := exp(predict(fit.cox2, newdata=tmp3.Y1, type="lp"))]
+            tmp3[, exp2.Y0 := exp(predict(fit.cox2, newdata=tmp3.Y0, type="lp"))]
+
+            tmp3[, P1.Y1 := dhazard1*exp1.Y1]
+            tmp3[, P1.Y0 := dhazard1*exp1.Y0]
+
+            tmp3[, P2.Y1 := dhazard2*exp2.Y1]
+            tmp3[, P2.Y0 := dhazard2*exp2.Y0]
+
+        }
         
     }
     
@@ -393,7 +427,7 @@ tmle.est.fun <- function(dt,
 
         if (baseline.tmle) { #-- for the simple baseline version of tmle: 
             
-            if ("Y.dummy >= 1TRUE" %in% names(tmp.hal)) {
+            if ("Y.dummy >= 1TRUE" %in% names(tmp.hal) | "Y.1 >= 1TRUE" %in% names(tmp.hal)) {
                 print("NB: please do not use time-dependent variables with the baseline tmle")
             }
 
@@ -552,20 +586,32 @@ tmle.est.fun <- function(dt,
 
          if (verbose) print(paste0("tmle iter = ", iter))
 
-        tmp3[time == rev(unique.times)[1], Z := P1 + Y.1]
+         tmp3[time == rev(unique.times)[1], Z := P1 + Y.1]
 
-        tmp3[time == rev(unique.times)[1], clever.Z.D.0 := Z] #Z
-        tmp3[time == rev(unique.times)[1], clever.Z.D.1 := Y.1]
-        
-        tmp3[time == rev(unique.times)[1], Z.Y1 := P1.Y1 + Y.1]
-        tmp3[time == rev(unique.times)[1], Z.Y0 := P1.Y0 + Y.1]
+         tmp3[time == rev(unique.times)[1], clever.Z.D.0 := Z] 
+         tmp3[time == rev(unique.times)[1], clever.Z.D.1 := Y.1]
+
+         if (length(Y.dummy.max)>0) {
+             for (kY in index.j) {
+                 tmp3[time == rev(unique.times)[1], (paste0("Z.Y", kY)) := get(paste0("P1.Y", kY)) + Y.1]
+             }
+         } else {
+             tmp3[time == rev(unique.times)[1], Z.Y1 := P1.Y1 + Y.1]
+             tmp3[time == rev(unique.times)[1], Z.Y0 := P1.Y0 + Y.1]
+         }
 
         tmp3[time == rev(unique.times)[1], clever.Z.Y.0 := Y.1] 
         tmp3[time == rev(unique.times)[1], clever.Z.Y.1 := Y.1+1]
 
-        tmp3[, Z.next := c(Z[-1], Z[.N]), by = "id"]
-        tmp3[, Z.Y1.next := c(Z.Y1[-1], Y[.N]), by = "id"]
-        tmp3[, Z.Y0.next := c(Z.Y0[-1], 0), by = "id"]
+         tmp3[, Z.next := c(Z[-1], Z[.N]), by = "id"]
+         if (length(Y.dummy.max)>0) {
+             for (kY in index.j) {
+                 tmp3[, (paste0("Z.Y", kY, ".next")) := c(get(paste0("Z.Y", kY))[-1], Y[.N]), by = "id"]
+             }
+         } else {
+             tmp3[, Z.Y1.next := c(Z.Y1[-1], Y[.N]), by = "id"]
+             tmp3[, Z.Y0.next := c(Z.Y0[-1], 0), by = "id"]
+         }
 
         ii.count <- 0
 
@@ -575,66 +621,111 @@ tmle.est.fun <- function(dt,
 
             if (verbose) if (round(ii.count/length(length(unique.times):2)*100) %% 10 == 0 & round((ii.count-1)/length(length(unique.times):2)*100) != round(ii.count/length(length(unique.times):2)*100))
                              print(paste0(round(ii.count/length(length(unique.times):2)*100), "% done with current iterations"))
-           
-             #-- compute clever covariates for Y:
-             tmp3[time == unique.times[ii-1], clever.Z.Y.0 := ((Z.Y0.next - (delta == 1))*(Y.1 == 0) + (Z.Y1.next - (delta == 1))*(Y.1 >= 1))*(1-P2)+Y.1*P2]
-             tmp3[time == unique.times[ii-1], clever.Z.Y.1 := (Z.Y1.next + 1 - (delta == 1))]
-                 
-             tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0.next - (delta == 1))*(1-P1.Y0)+(Z.Y1.next + 1 - (delta == 1))*P1.Y0] # & id %in% id.track
-             tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1.next - (delta == 1))*(1-P1.Y1)+(Z.Y1.next + 1 - (delta == 1))*P1.Y1] # & id %in% id.track
 
-             #-- compute clever covariates for D:
-             tmp3[time == unique.times[ii-1], clever.Z.D.0 := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)] #.next 
-             tmp3[time == unique.times[ii-1], clever.Z.D.1 := Y.1]
+             if (length(Y.dummy.max)>0) {
+
+                 for (kY in index.j) {
+
+                     #-- compute clever covariates for Y:
+                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                          clever.Z.Y.0 := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-P2)+Y.1*P2]
+                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                          clever.Z.Y.1 := (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) + 1 - (delta == 1))]
+
+                     tmp3[time == unique.times[ii-1], 
+                     (paste0("Z.Y", kY)) := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-get(paste0("P1.Y", kY))) + 
+                         (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) - (delta == 1) + 1)*get(paste0("P1.Y", kY))]
+                     
+                     #-- compute clever covariates for D:
+                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                          clever.Z.D.0 := get(paste0("Z.Y", kY))] 
+                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                          clever.Z.D.1 := Y.1]
                 
-             tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1*(1-P2.Y1)+Y.1*P2.Y1)]
-             tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0*(1-P2.Y0)+Y.1*P2.Y0)]
+                     tmp3[time == unique.times[ii-1],
+                     (paste0("Z.Y", kY)) := get(paste0("Z.Y", kY))*(1-get(paste0("P2.Y", kY)))+Y.1*get(paste0("P2.Y", kY))]
 
-             tmp3[time == unique.times[ii-1], Z := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)]
+                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                          Z := get(paste0("Z.Y", kY))]
 
-             tmp3[, Z.next := c(Z[-1], 1), by = "id"]
-             tmp3[, Z.Y1.next := c(Z.Y1[-1], 1), by = "id"]
-             tmp3[, Z.Y0.next := c(Z.Y0[-1], 1), by = "id"]
-      
+                     tmp3[, Z.next := c(Z[-1], 1), by = "id"]
+                     tmp3[, (paste0("Z.Y", kY, ".next")) := c(get(paste0("Z.Y", kY))[-1], Y[.N]), by = "id"]
+
+                 }
+                 
+             } else {
+                              
+                 #-- compute clever covariates for Y:
+                 tmp3[time == unique.times[ii-1], clever.Z.Y.0 := ((Z.Y0.next - (delta == 1))*(Y.1 == 0) + (Z.Y1.next - (delta == 1))*(Y.1 >= 1))*(1-P2)+Y.1*P2]
+                 tmp3[time == unique.times[ii-1], clever.Z.Y.1 := (Z.Y1.next + 1 - (delta == 1))]
+
+                 tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0.next - (delta == 1))*(1-P1.Y0)+(Z.Y1.next + 1 - (delta == 1))*P1.Y0] 
+                 tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1.next - (delta == 1))*(1-P1.Y1)+(Z.Y1.next + 1 - (delta == 1))*P1.Y1] 
+                 
+                 #-- compute clever covariates for D:
+                 tmp3[time == unique.times[ii-1], clever.Z.D.0 := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)] 
+                 tmp3[time == unique.times[ii-1], clever.Z.D.1 := Y.1]
+                
+                 tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1*(1-P2.Y1)+Y.1*P2.Y1)]
+                 tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0*(1-P2.Y0)+Y.1*P2.Y0)]
+
+                 tmp3[time == unique.times[ii-1], Z := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)]
+
+                 tmp3[, Z.next := c(Z[-1], 1), by = "id"]
+                 tmp3[, Z.Y1.next := c(Z.Y1[-1], 1), by = "id"]
+                 tmp3[, Z.Y0.next := c(Z.Y0[-1], 1), by = "id"]
+                 
+             }      
          }
-
-        #-- g.est: 
-        if (iter == 1) g.est <- tmp3[time == unique.times[1], mean(Z)]
         
-        #-- current estimator for target parameter:  
-        target.est <- tmp3[time == unique.times[1], mean(Z)]
+         #-- g.est: 
+         if (iter == 1) g.est <- tmp3[time == unique.times[1], mean(Z)]
+        
+         #-- current estimator for target parameter:  
+         target.est <- tmp3[time == unique.times[1], mean(Z)]
 
-        #-- efficient influence curve:         
-        eic <- tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1)) +
-                                        sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2)) +
-                                        Z[1]-target.est,
-                    by = "id"][[2]]
-        if (iter == 1) target.se <- sqrt(mean(eic^2/n))
+         #-- efficient influence curve:         
+         eic <- tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1)) +
+                                         sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2)) +
+                                         Z[1]-target.est,
+                     by = "id"][[2]]
+         if (iter == 1) target.se <- sqrt(mean(eic^2/n))
 
-        #-- check if solved well enough: 
-        if (verbose) print(paste0("eic equation solved at = ", abs(mean(eic))))
-        if (abs(mean(eic)) <= target.se/(log(n))) break(print(paste0("finished after ", iter, " iterations")))
+         #-- check if solved well enough: 
+         if (verbose) print(paste0("eic equation solved at = ", abs(mean(eic))))
+         if (abs(mean(eic)) <= target.se/(log(n))) break(print(paste0("finished after ", iter, " iterations")))
 
-        #-- otherwise update: 
-        target.fun.Y <- function(eps) {
-            mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1*exp(eps))), by = "id"][[2]])}
-        target.fun.D <- function(eps) {
-            mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2*exp(eps))), by = "id"][[2]])}
+         #-- otherwise update: 
+         target.fun.Y <- function(eps) {
+             mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1*exp(eps))), by = "id"][[2]])}
+         target.fun.D <- function(eps) {
+             mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2*exp(eps))), by = "id"][[2]])}
 
          eps.Y <- nleqslv(0.00, target.fun.Y)$x
          eps.D <- nleqslv(0.00, target.fun.D)$x
          
-        if (verbose) print(paste0("eps.Y = ", eps.Y))
-        if (verbose) print(paste0("eps.D = ", eps.D))
+         if (verbose) print(paste0("eps.Y = ", eps.Y))
+         if (verbose) print(paste0("eps.D = ", eps.D))
+         
+         tmp3[, P1 := P1*exp(eps.Y)]
+         tmp3[, P2 := P2*exp(eps.D)]
 
-        tmp3[, P1 := P1*exp(eps.Y)]
-        tmp3[, P2 := P2*exp(eps.D)]
+         if (length(Y.dummy.max)>0) {
 
-        tmp3[, P1.Y1 := P1.Y1*exp(eps.Y)]
-        tmp3[, P1.Y0 := P1.Y0*exp(eps.Y)]
+             for (kY in index.j) {
+                 tmp3[, (paste0("P1.Y", kY)) := get(paste0("P1.Y", kY))*exp(eps.Y)]
+                 tmp3[, (paste0("P2.Y", kY)) := get(paste0("P2.Y", kY))*exp(eps.D)]
+             }
 
-        tmp3[, P2.Y1 := P2.Y1*exp(eps.D)]
-        tmp3[, P2.Y0 := P2.Y0*exp(eps.D)]
+         } else {
+             
+             tmp3[, P1.Y1 := P1.Y1*exp(eps.Y)]
+             tmp3[, P1.Y0 := P1.Y0*exp(eps.Y)]
+
+             tmp3[, P2.Y1 := P2.Y1*exp(eps.D)]
+             tmp3[, P2.Y0 := P2.Y0*exp(eps.D)]
+             
+         }
         
     }
 

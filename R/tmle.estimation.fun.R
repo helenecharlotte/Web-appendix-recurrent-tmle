@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Oct 16 2024 (12:47) 
+## Last-Updated: Oct 16 2024 (13:45) 
 ##           By: Helene
-##     Update #: 266
+##     Update #: 295
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -98,7 +98,9 @@ tmle.est.fun <- function(dt,
     dt[, Y.dummy := (Y.1>0)]
     dt[, Y3.dummy := (Y.1 >= 3)]
     if (length(Y.dummy.max)>0) {
-        dt[, (paste0("Y.dummy.", Y.dummy.max)) := factor(findInterval(Y.1, 0:Y.dummy.max))]
+        for (kY in 1:Y.dummy.max) {
+            dt[, (paste0("Y.dummy.", kY)) := (Y.1 >= kY)]
+        }
     }
     dt[, Y.time := time-tstart, by = "id"]
 
@@ -123,8 +125,6 @@ tmle.est.fun <- function(dt,
     fit.cox2 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type2[["model"]])), data = dt)
     if (verbose) print(fit.cox1)
     if (verbose) print(fit.cox2)
-
-    browser()
 
     #-- with dependence on Y.time>t0: 
     if ("t0" %in% names(fit.type1)) {
@@ -190,7 +190,10 @@ tmle.est.fun <- function(dt,
     tmp3[, Y.dummy := (Y.1>0)]
     tmp3[, Y3.dummy := (Y.1 >= 3)]
     if (length(Y.dummy.max)>0) {
-        tmp3[, (paste0("Y.dummy.", Y.dummy.max)) := factor(findInterval(Y.1, 0:Y.dummy.max))]
+        tmp3[, Y.dummy.index := findInterval(Y.1, 0:Y.dummy.max)]
+        for (kY in 1:Y.dummy.max) {
+            tmp3[, (paste0("Y.dummy.", kY)) := (Y.1 >= kY)]
+        }
     }
     tmp3[, Y.time := time-c(0, time.obs.last[-.N]), by = "id"]
     tmp3[Y.dummy == 0, Y.time := 0]
@@ -381,13 +384,21 @@ tmle.est.fun <- function(dt,
         #-- NB: remember that this faster version currently only works with "Y.dummy" dependence
 
         if (length(Y.dummy.max)>0) { #-- to handle effect of Y.1  (no of jumps in the past)
-
-            index.j <- sort(unique(tmp3[[paste0("Y.dummy.", Y.dummy.max)]]))
-            index.j1 <- factor(sapply(as.numeric(index.j)+1, function(ij) min(ij, max(as.numeric(index.j)))))
+            
+            index.j <- 1:(Y.dummy.max+1)
+            index.j1 <- sapply(index.j+1, function(ij) min(ij, max(as.numeric(index.j))))
 
             for (kY in index.j) {
 
-                tmp3.Y.kY <- copy(tmp3)[, (paste0("Y.dummy.", Y.dummy.max)) := kY]
+                tmp3.Y.kY <- copy(tmp3)
+
+                for (kY2 in index.j) {
+                    if (kY2 < kY) {
+                        tmp3.Y.kY[, (paste0("Y.dummy.", kY2)) := 1]
+                    } else {
+                        tmp3.Y.kY[, (paste0("Y.dummy.", kY2)) := 0]
+                    }
+                }
 
                 tmp3[, (paste0("exp1.Y", kY)) := exp(predict(fit.cox1, newdata=tmp3.Y.kY, type="lp"))]
                 tmp3[, (paste0("exp2.Y", kY)) := exp(predict(fit.cox2, newdata=tmp3.Y.kY, type="lp"))]                
@@ -582,7 +593,7 @@ tmle.est.fun <- function(dt,
         }
     }
 
-     for (iter in 1:max.iter) {
+    for (iter in 1:max.iter) {
 
          if (verbose) print(paste0("tmle iter = ", iter))
 
@@ -627,9 +638,9 @@ tmle.est.fun <- function(dt,
                  for (kY in index.j) {
 
                      #-- compute clever covariates for Y:
-                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           clever.Z.Y.0 := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-P2)+Y.1*P2]
-                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           clever.Z.Y.1 := (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) + 1 - (delta == 1))]
 
                      tmp3[time == unique.times[ii-1], 
@@ -637,15 +648,15 @@ tmle.est.fun <- function(dt,
                          (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) - (delta == 1) + 1)*get(paste0("P1.Y", kY))]
                      
                      #-- compute clever covariates for D:
-                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           clever.Z.D.0 := get(paste0("Z.Y", kY))] 
-                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           clever.Z.D.1 := Y.1]
                 
                      tmp3[time == unique.times[ii-1],
                      (paste0("Z.Y", kY)) := get(paste0("Z.Y", kY))*(1-get(paste0("P2.Y", kY)))+Y.1*get(paste0("P2.Y", kY))]
 
-                     tmp3[time == unique.times[ii-1] & get(paste0("Y.dummy.", Y.dummy.max)) == kY,
+                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           Z := get(paste0("Z.Y", kY))]
 
                      tmp3[, Z.next := c(Z[-1], 1), by = "id"]

@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Oct 16 2024 (13:45) 
+## Last-Updated: Oct 17 2024 (13:35) 
 ##           By: Helene
-##     Update #: 295
+##     Update #: 346
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -434,6 +434,7 @@ tmle.est.fun <- function(dt,
     
     #--------------------------------    
     #-- update estimators if fitted with HAL:
+
     if (any(any.hal)) {
 
         if (baseline.tmle) { #-- for the simple baseline version of tmle: 
@@ -455,28 +456,75 @@ tmle.est.fun <- function(dt,
 
             tmp.hal[["Y.dummy"]] <- tmp.hal[["Y.dummy >= 1TRUE"]]
 
+            Y.dummy.vars <- grep(">=", names(tmp.hal)[substr(names(tmp.hal), 1, 3)  %in% c("Y.d", "Y.1")], value = TRUE)
+
+            if (length(grep("Y.1", Y.dummy.vars))>0) {
+                
+                Y.dummy.max <- max(as.numeric(gsub("TRUE|Y.1 >= ", "", grep("Y.1", Y.dummy.vars, value = TRUE))))
+
+                index.value <- as.numeric(gsub("Y.dummy >= |Y.1 >= |TRUE", "", Y.dummy.vars))
+                
+                tmp3[, Y.dummy.index := findInterval(Y.1, 0:Y.dummy.max)]
+                
+                index.j <- 1:(Y.dummy.max+1)
+                index.j1 <- sapply(index.j+1, function(ij) min(ij, max(as.numeric(index.j))))
+
+                for (kY in index.j) {
+
+                    #kY.below <- index.value[index.value %in% index.j[index.j<kY]]
+                    #kY.above <- index.value[index.value %in% index.j[index.j >= kY]]
+
+                    kY.vector <- apply(cbind(
+                        do.call("cbind", lapply((1:length(index.value))[index.value %in% index.j[index.j<kY]], function(kY.below) {
+                            tmp.hal[[Y.dummy.vars[kY.below]]] == 1
+                        })),
+                        do.call("cbind", lapply((1:length(index.value))[index.value %in% index.j[index.j >= kY]], function(kY.above) {
+                            tmp.hal[[Y.dummy.vars[kY.above]]] == 0
+                        }))), 1, prod)
+                    
+                    tmp.hal[, (paste0("kY.", kY)) := kY.vector]
+
+                }
+            }
+
             for (kk in 1:length(fit.hals)) {
 
                 delta.value <- fit.hals[[kk]][["delta.value"]]
 
                 tmp3 <- merge(tmp3[, !(names(tmp3) %in% c(paste0("P", delta.value), paste0("surv", delta.value), paste0("surv", delta.value, ".1"))), with = FALSE],
                               tmp.hal[observed.Y == 1, names(tmp.hal) %in% c("time", "id", paste0("P", delta.value), paste0("surv", delta.value), paste0("surv", delta.value, ".1")), with = FALSE], by = c("id", "time"))
+
+                if (length(grep("Y.1", Y.dummy.vars))>0) { #-- to handle dependence on Y.1:
+                    
+                    for (kY in index.j) {
+                        
+                        tmp.hal.kY <- tmp.hal[get(paste0("kY.", kY)) == 1]
+                        tmp.hal.kY[, (paste0("P", delta.value, ".Y", kY)) := get(paste0("P", delta.value))]
+
+                        tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, ".Y", kY)), with = FALSE],
+                                      tmp.hal.kY[, c(paste0("P", delta.value, ".Y", kY), "id", "time"), with = FALSE], by = c("id", "time"))
+
+                    }
+                    
+                } else {
+                
+                    tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
+                                                      paste0("P", delta.value)), with = FALSE]
+
+                    setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
             
-                tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
-                                                  paste0("P", delta.value)), with = FALSE]
+                    tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
+                                                      paste0("P", delta.value)), with = FALSE]
 
-                setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
-            
-                tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
-                                                  paste0("P", delta.value)), with = FALSE]
+                    setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
 
-                setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
+                    tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, c(".Y1", ".Y0"))), with = FALSE],
+                                  merge(tmp.Y1, tmp.Y0, by = c("id", "time")), by = c("id", "time"))
 
-                tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, c(".Y1", ".Y0"))), with = FALSE],
-                              merge(tmp.Y1, tmp.Y0, by = c("id", "time")), by = c("id", "time"))
+                    tmp3[Y.dummy == 0, paste0("P", delta.value, ".Y0")]
+                    tmp3[Y.dummy == 1, paste0("P", delta.value, ".Y1")]
 
-                tmp3[Y.dummy == 0, paste0("P", delta.value, ".Y0")]
-                tmp3[Y.dummy == 1, paste0("P", delta.value, ".Y1")]
+                }
 
             }
         }

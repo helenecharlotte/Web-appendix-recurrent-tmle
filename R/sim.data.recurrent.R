@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct  2 2024 (14:47) 
 ## Version: 
-## Last-Updated: Oct 14 2024 (14:47) 
+## Last-Updated: Nov 12 2024 (15:28) 
 ##           By: Helene
-##     Update #: 81
+##     Update #: 100
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -16,7 +16,7 @@
 ### Code:
 
 sim.data.outer <- function(n = 200,
-                           intervention.A = NULL,
+                           intervention.A = NULL, censoring = TRUE,
                            sim.setting = "1A",
                            cens.percentage = "low",
                            tau = 1.2,
@@ -26,7 +26,23 @@ sim.data.outer <- function(n = 200,
                            seed = sample(1e9, 1)) {
 
     if (length(intervention.A) == 0) {
-        if (get.cens.fraction) {  
+        if (!censoring) {
+            set.seed(seed)
+            out.true <- lapply(1:rep.true, function(ii) {
+                sim.data.fun(n = n, tau = tau,
+                             intervention.A = intervention.A,
+                             censoring = censoring,
+                             sim.setting = sim.setting,
+                             cens.percentage = cens.percentage,
+                             verbose = verbose)
+            })
+            out.true.1 <- out.true[[1]]
+            print(cumsum(sapply(out.true, function(x) x[1, 2]))/(1:rep.true))
+            plot(cumsum(sapply(out.true, function(x) x[1, 2]))/(1:rep.true))
+            out.true.1[1, 2] <- mean(sapply(out.true, function(x) x[1, 2]))
+            out.true.1[2, 2] <- mean(sapply(out.true, function(x) x[2, 2]))
+            return(out.true.1)
+        } else if (get.cens.fraction) {  
             sim.dt <- sim.data.fun(n = n, tau = tau,
                                    intervention.A = intervention.A,
                                    randomize.A = TRUE,
@@ -46,14 +62,13 @@ sim.data.outer <- function(n = 200,
                                 seed = seed))
         }
     } else {
-        set.seed(10)
+        set.seed(seed)
         out.true <- lapply(1:rep.true, function(ii) {
             sim.data.fun(n = n, tau = tau,
                          intervention.A = intervention.A,
                          sim.setting = sim.setting,
                          cens.percentage = cens.percentage,
-                         verbose = verbose,
-                         seed = seed)
+                         verbose = verbose)
         })
         out.true.1 <- out.true[[1]]
         print(cumsum(sapply(out.true, function(x) x[1, 2]))/(1:rep.true))
@@ -71,6 +86,7 @@ sim.data.fun <- function(n = 200,
                          sim.setting = "1A",
                          cens.percentage = "low",
                          intervention.A = NULL,
+                         censoring = TRUE,
                          loop.max = 100,
                          tau = 1.2,
                          endoffollowup = 3,
@@ -81,8 +97,6 @@ sim.data.fun <- function(n = 200,
 
     if (length(intervention.A)>0) {
         censoring <- FALSE
-    } else {
-        censoring <- TRUE
     }
 
     #-- weibull distribution parameters:
@@ -145,6 +159,37 @@ sim.data.fun <- function(n = 200,
         betaT2.k <- 1.4
         betaC.k <- 1.8
         alpha.T <- 0.8
+        alpha.T2 <- 0
+        
+        betaT.L1 <- betaT2.L1 <- 0
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+    } else if (sim.setting == "1Ax") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1.7
+        } else {
+            alpha.C <- -0.7
+        }
+        
+        betaT.k <- 3.1
+        betaT2.k <- 1.4
+        betaC.k <- 1.8
+        alpha.T <- 0.4
+        alpha.T2 <- 0
+
+    } else if (sim.setting == "1Bx") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1.7
+        } else {
+            alpha.C <- -0.75
+        }
+
+        betaT.k <- 3.1
+        betaT2.k <- 1.4
+        betaC.k <- 1.8
+        alpha.T <- 0.9
         alpha.T2 <- 0
         
         betaT.L1 <- betaT2.L1 <- 0
@@ -352,7 +397,7 @@ sim.data.fun <- function(n = 200,
     setkey(baseline, id); setkey(dt, id)
     dt <- merge(dt, baseline, by="id")
 
-    if (length(intervention.A)>0) {
+    if (length(intervention.A)>0 | !censoring) {
         return(do.call("rbind", lapply(tau, function(tau.kk) {
             out <- do.call("rbind", lapply(1:2, function(each) {
                 c(tau=tau.kk,

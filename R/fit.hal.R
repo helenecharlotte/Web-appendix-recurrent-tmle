@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (09:34) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (10:10) 
+## Last-Updated: Mar 27 2025 (18:23) 
 ##           By: Helene
-##     Update #: 6
+##     Update #: 111
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -15,7 +15,7 @@
 ## 
 ### Code:
 
-fit.hal <- function(seed = 13349,
+fit.hal <- function(seed = NULL,#13349,
                     pseudo.dt, 
                     delta.var = "delta",
                     delta.value = 1,
@@ -33,13 +33,16 @@ fit.hal <- function(seed = 13349,
                     cut.time.covar = NULL,
                     penalize.treatment = FALSE,
                     penalize.time = FALSE,
+                    stime = 0,
+                    scovar = 0,
                     cv.glmnet = FALSE,
                     V = 5,
+                    reduce.seed.dependence = FALSE,
                     lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
                     verbose = FALSE
                     ) {
 
-    set.seed(seed)
+    if (length(seed)>0) set.seed(seed)
 
     if (length(unique(pseudo.dt[[treatment.prediction]]))>1) {
         pseudo.subset <- pseudo.dt[[treatment]] == pseudo.dt[[treatment.prediction]]
@@ -50,7 +53,7 @@ fit.hal <- function(seed = 13349,
     if (!"observed.Y" %in% names(pseudo.dt)) {
         pseudo.dt[, observed.Y := 1]
     }
-    
+
     #-- basis matrix for hal: 
     X.hal <- basis.fun(pseudo.dt = pseudo.dt[pseudo.subset & pseudo.dt[["observed.Y"]] == 1],
                        delta.var = delta.var,
@@ -64,7 +67,9 @@ fit.hal <- function(seed = 13349,
                        two.way = two.way,
                        cut.two.way = cut.two.way,
                        cut.time.treatment = cut.time.treatment,
-                       cut.time.covar = cut.time.covar)
+                       cut.time.covar = cut.time.covar,
+                       stime = stime,
+                       scovar = scovar)
 
     #-- compute risk time and number of events for each grid period:
     hal.pseudo.dt <- X.hal$hal.pseudo.dt
@@ -82,12 +87,13 @@ fit.hal <- function(seed = 13349,
         penalty.factor[colnames(X.hal) %in% not.penalize] <- 0
     }
 
-    if (!penalize.time & length(grep("grid.period", colnames(X.hal)))>0) {  #-- time:
-        not.penalize <- grep("grid.period", colnames(X.hal), value=TRUE)
+    if (!penalize.time & length(grep("grid.time", colnames(X.hal)))>0) {  #-- time:
+        not.penalize <- grep("grid.time", colnames(X.hal), value=TRUE)
+        not.penalize <- not.penalize[!(not.penalize %in% grep("I\\(", colnames(X.hal), value=TRUE))]
         if (length(grep(":", not.penalize))>0) not.penalize <- not.penalize[-grep(":", not.penalize)]
         penalty.factor[colnames(X.hal) %in% not.penalize] <- 0
     }    
-    
+   
     #-- data as input to glmnet:
     tmp.dt <- unique(hal.pseudo.dt[, c("x", "D", "RT")])
     Y2.hal <- tmp.dt[RT>0, D]
@@ -108,7 +114,7 @@ fit.hal <- function(seed = 13349,
     } else {
 
         if (length(lambda.cvs) == 0) {
-            
+           
             hal.fit <- glmnet(x=as.matrix(X2.hal), y=Y2.hal,
                               offset=offset2,
                               family="poisson",
@@ -124,26 +130,48 @@ fit.hal <- function(seed = 13349,
                               V = V,
                               lambda.cvs = lambda.cvs,
                               delta.var = delta.var,
-                              delta.value = delta.value)
+                              delta.value = delta.value,
+                              seed = if(is.null(seed)) NULL else {seed+5843})
         
             lambda.cv <- cve.hal$min$lambda.cv
             
         } else {
-        
-            cve.hal <- cv.fun(loss.fun = lebesgue.loss.fun,
-                              hal.pseudo.dt = hal.pseudo.dt,
-                              X = X.hal,
-                              penalty.factor = penalty.factor,
-                              V = V,
-                              lambda.cvs = lambda.cvs,
-                              delta.var = delta.var,
-                              delta.value = delta.value)
+
+            if (reduce.seed.dependence>1) {
+                cve.hal.list <- list()
+                for (mm in 1:reduce.seed.dependence) {
+                    cve.hal.list[[mm]] <- cv.fun(loss.fun = lebesgue.loss.fun,
+                                                 hal.pseudo.dt = hal.pseudo.dt,
+                                                 X = X.hal,
+                                                 penalty.factor = penalty.factor,
+                                                 V = V,
+                                                 lambda.cvs = lambda.cvs,
+                                                 delta.var = delta.var,
+                                                 delta.value = delta.value,
+                                                 seed = if(is.null(seed)) NULL else {seed+5843})
+
+                    
+                }
+                cve <- rowMeans(do.call("cbind", lapply(cve.hal.list, function(xlist) xlist$all[, "cve"])))
+                lambda.cv <- cve.hal.list[[1]]$all[, "lambda"][cve == min(cve)]
+            } else {
+                cve.hal <- cv.fun(loss.fun = lebesgue.loss.fun,
+                                  hal.pseudo.dt = hal.pseudo.dt,
+                                  X = X.hal,
+                                  penalty.factor = penalty.factor,
+                                  V = V,
+                                  lambda.cvs = lambda.cvs,
+                                  delta.var = delta.var,
+                                  delta.value = delta.value,
+                                  seed = if(is.null(seed)) NULL else {seed+5843})
+                lambda.cv <- cve.hal$min$lambda.cv
+            }
 
             xxx <- 0 
             tryCatch(
                 hal.fit <- glmnet(x=as.matrix(X2.hal), y=Y2.hal,
                                   offset=offset2,
-                                  lambda=cve.hal$min$lambda.cv, 
+                                  lambda=lambda.cv, 
                                   family="poisson",
                                   penalty.factor=penalty.factor,
                                   maxit=10000),
@@ -155,7 +183,7 @@ fit.hal <- function(seed = 13349,
                 tryCatch(
                     hal.fit <- glmnet(x=as.matrix(X2.hal), y=Y2.hal,
                                       offset=offset2,
-                                      lambda=cve.hal$min$lambda.cv, 
+                                      lambda=lambda.cv, 
                                       family="poisson",
                                       penalty.factor=penalty.factor,
                                       maxit=100000),
@@ -188,16 +216,12 @@ fit.hal <- function(seed = 13349,
             
                 lambda.cv <- hal.fit$lambda.min
             
-            } else {
-        
-                lambda.cv <- cve.hal$min$lambda.cv
-
-            }
+            } 
 
         }
 
     }
-    
+
     if (verbose) {
         print("--------------------------------------------")
         print(paste0(delta.var, " = ", delta.value))

@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Oct 17 2024 (13:35) 
+## Last-Updated: Apr  1 2025 (13:26) 
 ##           By: Helene
-##     Update #: 346
+##     Update #: 509
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -27,22 +27,32 @@ tmle.est.fun <- function(dt,
                          fit.treatment = list(model = "A~L1+L2+L3",
                                               fit = "glm"),
                          verbose = FALSE,
+                         browse.hal = FALSE,
+                         browse2 = FALSE, 
                          #--- simpler estimators: 
                          baseline.tmle = FALSE,
                          naive.gcomp = FALSE, 
                          standard.np = FALSE,
                          max.iter = FALSE,
-                         #--- HAL parameters: 
+                         #--- HAL parameters:
                          lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
                          cut.one.way = 15,
                          cut.time.varying = 5,
                          Y.time.grid = NULL,
-                         cut.time = 15,
+                         cut.time = 35,
                          two.way = cbind(var1="", var2=""),
                          cut.two.way = 5,
                          cut.time.treatment = 0,
                          cut.time.covar = 0,
-                         cv.glmnet = FALSE
+                         penalize.time = FALSE,
+                         reduce.seed.dependence = FALSE, 
+                         stime = 0,
+                         scovar = 0,
+                         tmle.criterion = 1,
+                         V = 10, 
+                         cv.glmnet = FALSE,
+                         seed.hal = NULL,
+                         output.lambda.cvs = FALSE
                          ) {
 
     n <- length(unique(dt[["id"]]))
@@ -96,6 +106,7 @@ tmle.est.fun <- function(dt,
     dt[, Y := cumsum(1*(delta == 1)), by = "id"]
     dt[, Y.1 := c(0, Y[-.N]), by = "id"]
     dt[, Y.dummy := (Y.1>0)]
+    dt[, Y2.dummy := (Y.1 >= 2)]
     dt[, Y3.dummy := (Y.1 >= 3)]
     if (length(Y.dummy.max)>0) {
         for (kY in 1:Y.dummy.max) {
@@ -107,7 +118,8 @@ tmle.est.fun <- function(dt,
     #--------------------------------
     #-- "G-part"; for clever weight estimation:
     # (we start with cox models, if HAL is specified this is fitted later)
-    fit.cox0 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type0[["model"]])), data = dt)
+    fit.cox0 <- coxph(as.formula(fit.type0[["model"]]), data = dt, 
+                      control = coxph.control(timefix = FALSE))
     if (verbose) print(fit.cox0)
     dt[, idN := 1:.N, by = "id"]
     if (fit.treatment[["fit"]] == "glm") {
@@ -121,8 +133,10 @@ tmle.est.fun <- function(dt,
     #--------------------------------
     #-- "Q-part":
     # (we start with cox models, if HAL is specified this is fitted later)
-    fit.cox1 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type1[["model"]])), data = dt)
-    fit.cox2 <- coxph(as.formula(gsub("\\+Y.time.dummy", "", fit.type2[["model"]])), data = dt)
+    fit.cox1 <- coxph(as.formula(fit.type1[["model"]]), data = dt, 
+                      control = coxph.control(timefix = FALSE))
+    fit.cox2 <- coxph(as.formula(fit.type2[["model"]]), data = dt, 
+                      control = coxph.control(timefix = FALSE))
     if (verbose) print(fit.cox1)
     if (verbose) print(fit.cox2)
 
@@ -161,7 +175,7 @@ tmle.est.fun <- function(dt,
 
     #--------------------------------
     #-- expanded dataset to work with for TMLE:
-    # FIXME? rename tmp3 :-)
+    # (should rename tmp3:))
     tmp3 <- merge(merge(merge(tmp.inner[order(id, time)][is.na(delta), delta := 0][, -c("tstop"), with = FALSE],
                               tmp.type1[dhazard1>0], by = "time", all = TRUE),
                         tmp.type2[dhazard2>0], by = "time", all = TRUE),
@@ -188,6 +202,7 @@ tmle.est.fun <- function(dt,
     tmp3[, Y := cumsum(1*(delta == 1)), by = "id"]
     tmp3[, Y.1 := c(0, Y[-.N]), by = "id"]
     tmp3[, Y.dummy := (Y.1>0)]
+    tmp3[, Y2.dummy := (Y.1 >= 2)]
     tmp3[, Y3.dummy := (Y.1 >= 3)]
     if (length(Y.dummy.max)>0) {
         tmp3[, Y.dummy.index := findInterval(Y.1, 0:Y.dummy.max)]
@@ -200,6 +215,7 @@ tmle.est.fun <- function(dt,
     tmp3[, final.time := max(time.obs), by = "id"]
     tmp3[time > final.time, Y.time := time-final.time]
     tmp3 <- tmp3[time <= tau] #- only include data up to time tau!
+    tmp3[, before.tau := 1*(time <= tau)]
     tmp3[, time.diff := c(time[-1], tau) - time, by = "id"]
     tmp3[Y.dummy == 0, Y.time := 0] #- only if there was a jump in past
 
@@ -221,15 +237,15 @@ tmle.est.fun <- function(dt,
             #-- kaplan-meier estimator for survival;
             km.mod <- "Hist(time, delta==2)~A"
             km.fit <- summary(prodlim(formula(km.mod), data=dt.km),
-                              times=unique.times, asMatrix=TRUE)$table
+                              times=unique.times[unique.times<=tau], asMatrix=TRUE)$table
             #-- kaplan-meier estimator for censoring;
             km.cens.mod <- "Hist(time, delta==0)~A"
             km.cens.fit <- summary(prodlim(formula(km.cens.mod), data=dt.km),
-                                   times=unique.times, asMatrix=TRUE)$table
+                                   times=unique.times[unique.times<=tau], asMatrix=TRUE)$table
             #-- nelson-aalen estimator for intensity of recurrent events;
             na.mod <- "Hist(time, delta)~A"
             na.fit <- summary(prodlim(formula(na.mod), data=dt),
-                              cause=1,times=unique.times, asMatrix=TRUE)$table
+                              cause=1,times=unique.times[unique.times<=tau], asMatrix=TRUE)$table
             dt.non.fit <- merge(data.table(A = as.numeric(gsub("A\\=", "", km.fit[, "X"])),
                                            time = as.numeric(km.fit[, "time"]),
                                            n.risk.km = as.numeric(km.fit[, "n.risk"]),
@@ -255,19 +271,19 @@ tmle.est.fun <- function(dt,
             km.mod <- paste0("Hist(time, delta==2)~", Aname)
             km.fit <- data.table(
                 summary(prodlim(formula(km.mod), data=dt.km),
-                        times=unique.times)[, c(Aname, "time", "n.risk", "n.event", "surv"), with = FALSE])
+                        times=unique.times[unique.times<=tau])[, c(Aname, "time", "n.risk", "n.event", "surv"), with = FALSE])
             setnames(km.fit, c("n.risk", "n.event", "surv"),  c("n.risk.km", "n.event.km", "S.km"))
             #-- kaplan-meier estimator for censoring;
             km.cens.mod <- paste0("Hist(time, delta==0)~", Aname)
             km.cens.fit <- data.table(
                 summary(prodlim(formula(km.cens.mod), data=dt.km),
-                        times=unique.times)[, c(Aname, "time", "n.risk", "n.event", "surv"), with = FALSE])
+                        times=unique.times[unique.times<=tau])[, c(Aname, "time", "n.risk", "n.event", "surv"), with = FALSE])
             setnames(km.cens.fit, c("n.risk", "n.event", "surv"),  c("n.risk.cens.km", "n.event.cens.km", "S.cens.km"))
             #-- nelson-aalen estimator for intensity of recurrent events;
             na.mod <- paste0("Hist(time, delta)~", Aname)
             na.fit <- data.table(
                 summary(prodlim(formula(na.mod), data=dt),
-                        cause=1, times=unique.times)[, c(Aname, "time", "n.risk", "n.event"), with = FALSE])
+                        cause=1, times=unique.times[unique.times<=tau])[, c(Aname, "time", "n.risk", "n.event"), with = FALSE])
             setnames(na.fit, c("n.risk", "n.event"),  c("n.risk.na", "n.event.na"))
             dt.non.fit <- merge(km.fit, na.fit,
                                 by = c(Aname, "time"))[, S.km.1 := c(1, S.km[-.N]), by = Aname]
@@ -278,7 +294,7 @@ tmle.est.fun <- function(dt,
         dt.cens.non.fit[, target.t := cumsum(S.km.1*n.event.na/n.risk.km), by = Aname]
         tmp3 <- merge(tmp3,  dt.cens.non.fit, by = c(Aname, "time"))
         tmp3[, final.time := max(time.obs), by = "id"]
-        dt.non.fit.eic <- tmp3[, sum((time <= final.time & get(Aname) == Aobs)/S.cens.km.1*(
+        dt.non.fit.eic <- tmp3[time <= tau, sum((time <= final.time & get(Aname) == Aobs)/S.cens.km.1*(
             ((delta == 1) - n.event.na/n.risk.km) -
             (target.tau - target.t)/S.km*((delta == 2) - n.event.km/n.risk.km)
         )), by = c("id", "Aobs")][, eic := V1]
@@ -289,7 +305,8 @@ tmle.est.fun <- function(dt,
     }
 
     #--------------------------------
-    #-- compute needed quantities for (initial) estimation and targeting 
+    #-- compute needed quantities for (initial) estimation and targeting
+    
     tmp3[, exp1 := exp(predict(fit.cox1, newdata=tmp3, type="lp"))]
     tmp3[, surv1 := exp(-cumsum(exp1*dhazard1)), by = "id"]
 
@@ -304,10 +321,14 @@ tmle.est.fun <- function(dt,
     tmp3[, surv0 := exp(-cumsum(exp0*dhazard0)), by = "id"]
     tmp3[, surv0.1 := c(1, surv0[-.N]), by = "id"]
 
+    tmp3[, surv0.cox := surv0]
+    tmp3[, surv0.1.cox := surv0.1]
+
     #--------------------------------
-    #-- naive g-comp estimator: 
+    #-- naive g-comp estimator:
+    
     if (naive.gcomp) {
-        return(mean(tmp3[, sum(P1*surv2.1), by = "id"][[2]]))
+        return(mean(tmp3[time <= tau, sum(P1*surv2.1), by = "id"][[2]]))
     }
 
     #--------------------------------
@@ -318,6 +339,9 @@ tmle.est.fun <- function(dt,
     if (any(any.hal)) {
 
         covars <- varnames[varnames != Aname]
+        if (length(grep("\\.squared", covars))>0) {
+            covars <- covars[!(covars %in% grep("\\.squared", covars, value = TRUE))]
+        }
 
         #-- interactions: 
         if (cut.two.way > 0) {
@@ -333,6 +357,7 @@ tmle.est.fun <- function(dt,
         tmp.hal <- copy(tmp3)[, observed.Y := 1]
 
         #-- fit HAL: 
+
         fit.hals <- lapply(c(1,2,0)[any.hal], function(delta.value) {
             fit.hal(
                 pseudo.dt = tmp.hal,
@@ -351,10 +376,37 @@ tmle.est.fun <- function(dt,
                 cut.two.way = cut.two.way,
                 cut.time.treatment = cut.time.treatment,
                 cut.time.covar = cut.time.covar,
+                penalize.time = penalize.time,
+                stime = stime,
+                scovar = scovar,
+                reduce.seed.dependence = reduce.seed.dependence,
+                V = V,
                 cv.glmnet = cv.glmnet,
-                verbose = verbose)
+                verbose = verbose,
+                seed = seed.hal)
         })
 
+
+        if (output.lambda.cvs) {
+            lambda.cvs <- lapply(fit.hals, function(fh) c(delta = fh$delta.value, lambda.cv = fh$lambda.cv))
+            lambda.cvs.names <- sapply(lambda.cvs, function(lc) {
+                paste0("delta = ", lc["delta"])
+            })
+            lambda.cvs <- sapply(lambda.cvs, function(lc) {
+                lc["lambda.cv"]
+            })
+            names(lambda.cvs) <- lambda.cvs.names
+            hal.coefs <- lapply(fit.hals, function(fh) {
+                delta <- fh$delta.value
+                get.coef <- coef(fh$hal.fit, s = fh$lambda)
+                coef.dt <- data.table(non.zero = get.coef@Dimnames[[1]][get.coef@i+1],
+                                      coef = get.coef@x)[non.zero %in% c("Aobs", "Y.dummy >= 1TRUE")]
+                coefs <- coef.dt[["coef"]]
+                names(coefs) <- paste0(coef.dt[["non.zero"]], "(d = ", delta, ")")
+                return(coefs)
+            })
+        }
+        
         #-- predict in expanded data: 
         tmp.hal <- predict.hal(
             fit.hals = fit.hals,
@@ -372,19 +424,30 @@ tmle.est.fun <- function(dt,
             cut.two.way = cut.two.way,
             cut.time.treatment = cut.time.treatment,
             cut.time.covar = cut.time.covar,
-            verbose = verbose)
+            stime = stime,
+            scovar = scovar,
+            verbose = verbose,
+            seed = seed.hal)
+
+        if (browse.hal) browser()
 
     }
 
+    #--------------------------------    
+    #-- prediction part is over, so remove data after tau:
+    #-- NB CHECK
+    
+    tmp3 <- tmp3[time <= tau]
+    if (any(any.hal)) tmp.hal <- tmp.hal[time <= tau]
+    unique.times <- unique.times[unique.times <= tau]
+    
     #--------------------------------    
     #-- to handle dependence on jump in the past:
     
     if (!baseline.tmle) { #-- only relevant for the general tmle:
 
-        #-- NB: remember that this faster version currently only works with "Y.dummy" dependence
-
         if (length(Y.dummy.max)>0) { #-- to handle effect of Y.1  (no of jumps in the past)
-            
+          
             index.j <- 1:(Y.dummy.max+1)
             index.j1 <- sapply(index.j+1, function(ij) min(ij, max(as.numeric(index.j))))
 
@@ -397,6 +460,9 @@ tmle.est.fun <- function(dt,
                         tmp3.Y.kY[, (paste0("Y.dummy.", kY2)) := 1]
                     } else {
                         tmp3.Y.kY[, (paste0("Y.dummy.", kY2)) := 0]
+                    }
+                    if (kY2 == 1) {
+                        tmp3.Y.kY[, Y.dummy := get(paste0("Y.dummy.", kY2))]
                     }
                 }
 
@@ -428,6 +494,14 @@ tmle.est.fun <- function(dt,
             tmp3[, P2.Y1 := dhazard2*exp2.Y1]
             tmp3[, P2.Y0 := dhazard2*exp2.Y0]
 
+            if (browse2) {
+                tmp3[, P1.Y1.cox := dhazard1*exp1.Y1]
+                tmp3[, P1.Y0.cox := dhazard1*exp1.Y0]
+
+                tmp3[, P2.Y1.cox := dhazard2*exp2.Y1]
+                tmp3[, P2.Y0.cox := dhazard2*exp2.Y0]
+            }
+
         }
         
     }
@@ -440,7 +514,7 @@ tmle.est.fun <- function(dt,
         if (baseline.tmle) { #-- for the simple baseline version of tmle: 
             
             if ("Y.dummy >= 1TRUE" %in% names(tmp.hal) | "Y.1 >= 1TRUE" %in% names(tmp.hal)) {
-                print("NB: please do not use time-dependent variables with the baseline tmle")
+                print("NB: do not use time-dependent variables with the baseline tmle")
             }
 
             for (kk in 1:length(fit.hals)) {
@@ -452,9 +526,11 @@ tmle.est.fun <- function(dt,
         } else { #-- for the general version of tmle:
 
             #-- NB: when using HAL, we here go from long to wide format
-            #-- NB: remember that this faster version currently only works with "Y.dummy" dependence
+            #-- NB: remember that there is a faster version which works with "Y.dummy" dependence alone
 
-            tmp.hal[["Y.dummy"]] <- tmp.hal[["Y.dummy >= 1TRUE"]]
+            if (length(tmp.hal[["Y.dummy >= 1TRUE"]])>0) {
+                tmp.hal[["Y.dummy"]] <- tmp.hal[["Y.dummy >= 1TRUE"]]
+            }
 
             Y.dummy.vars <- grep(">=", names(tmp.hal)[substr(names(tmp.hal), 1, 3)  %in% c("Y.d", "Y.1")], value = TRUE)
 
@@ -470,9 +546,6 @@ tmle.est.fun <- function(dt,
                 index.j1 <- sapply(index.j+1, function(ij) min(ij, max(as.numeric(index.j))))
 
                 for (kY in index.j) {
-
-                    #kY.below <- index.value[index.value %in% index.j[index.j<kY]]
-                    #kY.above <- index.value[index.value %in% index.j[index.j >= kY]]
 
                     kY.vector <- apply(cbind(
                         do.call("cbind", lapply((1:length(index.value))[index.value %in% index.j[index.j<kY]], function(kY.below) {
@@ -507,28 +580,43 @@ tmle.est.fun <- function(dt,
                     }
                     
                 } else {
-                
-                    tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
-                                                      paste0("P", delta.value)), with = FALSE]
 
-                    setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
+                    if (length(Y.dummy.vars)>0) {
+                        
+                        tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
+                                                          paste0("P", delta.value)), with = FALSE]
+
+                        setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
             
-                    tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
-                                                      paste0("P", delta.value)), with = FALSE]
+                        tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
+                                                          paste0("P", delta.value)), with = FALSE]
 
-                    setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
+                        setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
+                        
+                    } else { ##--- when there is no dependence on past of recurrent event process. (this can be improved/simplified)
+
+                        tmp.Y1 <- tmp.hal[, c("id", "time",
+                                              paste0("P", delta.value)), with = FALSE]
+
+                        setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
+            
+                        tmp.Y0 <- tmp.hal[, c("id", "time",
+                                              paste0("P", delta.value)), with = FALSE]
+
+                        setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
+
+                    }
 
                     tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, c(".Y1", ".Y0"))), with = FALSE],
                                   merge(tmp.Y1, tmp.Y0, by = c("id", "time")), by = c("id", "time"))
-
-                    tmp3[Y.dummy == 0, paste0("P", delta.value, ".Y0")]
-                    tmp3[Y.dummy == 1, paste0("P", delta.value, ".Y1")]
 
                 }
 
             }
         }
     }
+
+    if (browse2) browser()
     
     #--------------------------------    
     #-- compute clever weights:
@@ -550,6 +638,7 @@ tmle.est.fun <- function(dt,
 
     #--------------------------------    
     #-- collect info on positivity issues:
+    
     if (tmp3[clever.weight>0 & time <= final.time, max(clever.weight)]>100) {
         positivity.issues <- tmp3[clever.weight>0 & time <= final.time & clever.weight > 100, length(unique(id))]
         print("NB: positivity issues! weights will be truncated")
@@ -560,6 +649,7 @@ tmle.est.fun <- function(dt,
 
     #--------------------------------    
     #-- simple "baseline" version of TMLE:
+    
     if (baseline.tmle) {
 
         for (iter in 1:max.iter) {
@@ -614,33 +704,6 @@ tmle.est.fun <- function(dt,
     #--------------------------------    
     #-- "general" version of TMLE: 
 
-    if (FALSE & any(any.hal)) {
-
-        tmp.hal[["Y.dummy"]] <- tmp.hal[["Y.dummy >= 1TRUE"]]
-
-        for (kk in 1:length(fit.hals)) {
-
-            delta.value <- fit.hals[[kk]][["delta.value"]]
-            
-            tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
-                                              paste0("P", delta.value)), with = FALSE]
-
-            setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
-            
-            tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
-                                              paste0("P", delta.value)), with = FALSE]
-
-            setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
-
-            tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, c(".Y1", ".Y0"))), with = FALSE],
-                          merge(tmp.Y1, tmp.Y0, by = c("id", "time")), by = c("id", "time"))
-
-            tmp3[Y.dummy == 0, paste0("P", delta.value, ".Y0")]
-            tmp3[Y.dummy == 1, paste0("P", delta.value, ".Y1")]
-            
-        }
-    }
-
     for (iter in 1:max.iter) {
 
          if (verbose) print(paste0("tmle iter = ", iter))
@@ -689,7 +752,7 @@ tmle.est.fun <- function(dt,
                      tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
                           clever.Z.Y.0 := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-P2)+Y.1*P2]
                      tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          clever.Z.Y.1 := (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) + 1 - (delta == 1))]
+                          clever.Z.Y.1 := (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) + 1 - (delta == 1))*(1-P2)+Y.1*P2]
 
                      tmp3[time == unique.times[ii-1], 
                      (paste0("Z.Y", kY)) := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-get(paste0("P1.Y", kY))) + 
@@ -716,7 +779,7 @@ tmle.est.fun <- function(dt,
                               
                  #-- compute clever covariates for Y:
                  tmp3[time == unique.times[ii-1], clever.Z.Y.0 := ((Z.Y0.next - (delta == 1))*(Y.1 == 0) + (Z.Y1.next - (delta == 1))*(Y.1 >= 1))*(1-P2)+Y.1*P2]
-                 tmp3[time == unique.times[ii-1], clever.Z.Y.1 := (Z.Y1.next + 1 - (delta == 1))]
+                 tmp3[time == unique.times[ii-1], clever.Z.Y.1 := (Z.Y1.next + 1 - (delta == 1))*(1-P2)+Y.1*P2]
 
                  tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0.next - (delta == 1))*(1-P1.Y0)+(Z.Y1.next + 1 - (delta == 1))*P1.Y0] 
                  tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1.next - (delta == 1))*(1-P1.Y1)+(Z.Y1.next + 1 - (delta == 1))*P1.Y1] 
@@ -737,22 +800,26 @@ tmle.est.fun <- function(dt,
              }      
          }
         
-         #-- g.est: 
-         if (iter == 1) g.est <- tmp3[time == unique.times[1], mean(Z)]
+        #-- g.est: 
+        if (iter == 1) g.est <- tmp3[time == unique.times[1], mean(Z)]
         
-         #-- current estimator for target parameter:  
-         target.est <- tmp3[time == unique.times[1], mean(Z)]
+        #-- current estimator for target parameter:  
+        target.est <- tmp3[time == unique.times[1], mean(Z)]
 
-         #-- efficient influence curve:         
-         eic <- tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1)) +
-                                         sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2)) +
-                                         Z[1]-target.est,
-                     by = "id"][[2]]
-         if (iter == 1) target.se <- sqrt(mean(eic^2/n))
+        #-- efficient influence curve:         
+        eic <- tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1)) +
+                                        sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2)) +
+                                        Z[1]-target.est,
+                    by = "id"][[2]]
+        if (iter == 1) target.se <- sqrt(mean(eic^2/n))
 
-         #-- check if solved well enough: 
-         if (verbose) print(paste0("eic equation solved at = ", abs(mean(eic))))
-         if (abs(mean(eic)) <= target.se/(log(n))) break(print(paste0("finished after ", iter, " iterations")))
+        #-- check if solved well enough: 
+        if (verbose) print(paste0("eic equation solved at = ", abs(mean(eic))))
+        if (tmle.criterion == 1) {
+            if (abs(mean(eic)) <= target.se/(log(n))) break(print(paste0("finished after ", iter, " iterations")))
+        } else {
+            if (abs(mean(eic)) <= target.se/(sqrt(n)*log(n))) break(print(paste0("finished after ", iter, " iterations")))
+        }
 
          #-- otherwise update: 
          target.fun.Y <- function(eps) {
@@ -788,10 +855,15 @@ tmle.est.fun <- function(dt,
         
     }
 
-    return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues))
+    if (output.lambda.cvs) {
+        return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues, lambda.cvs = lambda.cvs, hal.coefs = hal.coefs))
+    } else {
+        return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues))
+    }
     
 }
 
 
 ######################################################################
 ### tmle.estimation.fun.R ends here
+

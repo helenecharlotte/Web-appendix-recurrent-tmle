@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:09) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (10:15) 
+## Last-Updated: Mar 27 2025 (18:23) 
 ##           By: Helene
-##     Update #: 12
+##     Update #: 131
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -29,7 +29,9 @@ basis.fun <- function(pseudo.dt, ## tmp3,
                       cut.two.way = 5,
                       cut.time.treatment = NULL,
                       cut.time.covar = NULL,
-                      predict = FALSE) {
+                      predict = FALSE,
+                      stime = 0,
+                      scovar = 0) {
 
     n <- nrow(unique(pseudo.dt, by = "id"))
 
@@ -54,37 +56,43 @@ basis.fun <- function(pseudo.dt, ## tmp3,
         grid.times <- c(0, indicator.basis.fun(pseudo.dt[get(time.var)<=final.time], time.var, cut.time, return.grid=TRUE), Inf)
         pseudo.dt[, grid.period:=as.numeric(cut(get(time.var), grid.times, include.lowest=TRUE, right=FALSE))]
 
+        by.vars <- c("id", "grid.period")
+        if (length(time.varying.covars)>0) by.vars <- c(by.vars, time.varying.covars)
+
         if (delta.value == 0) {
-            pseudo.dt[, ddd := sum(get(time.var)==final.time & get(delta.var)==delta.value), by = c("id", "grid.period")]
+            pseudo.dt[, ddd := sum(get(time.var)==final.time & get(delta.var)==delta.value), by = by.vars]
         } else {
-            pseudo.dt[, ddd := sum((get(time.var)<=final.time)*get(delta.var)==delta.value), by = c("id", "grid.period")]
+            pseudo.dt[, ddd := sum((get(time.var)<=final.time)*(get(delta.var)==delta.value)), by = by.vars]
         }
-        pseudo.dt[, risk.time := diff(c(0,get(time.var))), by = "id"]
-        pseudo.dt[, risk.time := sum((get(time.var)<=final.time)*risk.time), by = c("id", "grid.period")]
 
         #-- NB: following solution for predict option is *slow*;
-        if (!predict) hal.pseudo.dt <- unique(pseudo.dt[get(time.var)<=final.time], by=c("id", "grid.period")) else hal.pseudo.dt <- copy(pseudo.dt)
+        if (!predict) hal.pseudo.dt <- unique(pseudo.dt[get(time.var)<=final.time], by=by.vars) else hal.pseudo.dt <- copy(pseudo.dt)
         hal.pseudo.dt[, grid.time:=grid.times[grid.period]]
-        #-- NB: could consider if there is a better way to allow time-varying covariates change where
-        #-- they actually do +++ consider if this step makes good sense;
-        if (!predict) for (covar in time.varying.covars) hal.pseudo.dt[, (covar):=get(covar)[1], by = c("id", "grid.period")]
-        hal.pseudo.dt[, (time.var):=grid.time]
+        hal.pseudo.dt[grid.time == 0, (time.var):=0]
+
+        hal.pseudo.dt[, risk.time := diff(c(get(time.var), final.time[.N])), by = "id"]
+
+        if (FALSE) {
+            hal.pseudo.dt[id == 3, c("time", "grid.time", "risk.time", "Y.dummy", "ddd")] #, "test.risk.time"
+            hal.pseudo.dt[id == 3, sum(ddd)]
+            dt1[id == 3, sum(delta == 1)]
+        }
         
     }
 
     options(na.action="na.pass")
-    
+
     X <- Matrix(
         model.matrix(formula(paste0(
             delta.var, "~-1",
             ifelse(length(treatment)>0, paste0("+", treatment), ""),
             ifelse(length(time.var)>0, paste0("+",
-                                              paste0(indicator.basis.fun(hal.pseudo.dt, "grid.period", cut.time), collapse="+")), ""),
+                                              paste0(indicator.basis.fun(hal.pseudo.dt, "grid.time", cut.time), collapse="+")), ""),
             ifelse(length(time.var)>0 & cut.time.treatment>0,
-                   paste0("+", paste0(paste0(indicator.basis.fun(hal.pseudo.dt, "grid.period", cut.time.treatment), ":", treatment, "+"), collapse="")), ""),
+                   paste0("+", paste0(paste0(indicator.basis.fun(hal.pseudo.dt, "grid.time", cut.time.treatment), ":", treatment, "+"), collapse="")), ""),
             ifelse(length(time.var)>0 & cut.time.covar>0,
                    paste0("+", paste0(sapply(
-                                   covars, function(covar) paste0(paste0(indicator.basis.fun(hal.pseudo.dt, "grid.period", cut.time.covar), ":", indicator.basis.fun(hal.pseudo.dt, covar, cut.time.covar), "+"), collapse="")), collapse="+"), ""), ""),
+                                   covars, function(covar) paste0(paste0(indicator.basis.fun(hal.pseudo.dt, "grid.time", cut.time.covar), ":", indicator.basis.fun(hal.pseudo.dt, covar, cut.time.covar), "+"), collapse="")), collapse="+"), ""), ""),
             ifelse(length(covars)>0 & cut.one.way>2,
                    paste0("+", paste0(sapply(covars, function(covar) paste0(indicator.basis.fun(hal.pseudo.dt, covar, cut.one.way), collapse="+")), collapse="+")),
                    ""),
@@ -154,25 +162,28 @@ basis.fun <- function(pseudo.dt, ## tmp3,
 
 }
 
-indicator.basis.fun <- function(pseudo.dt, xvar, xcut, xgrid=NULL, type="obs", return.grid=FALSE, delta.var=NULL, seed=220) {
-    set.seed(seed)
+indicator.basis.fun <- function(pseudo.dt, xvar, xcut, xgrid=NULL, type="obs", return.grid=FALSE, delta.var=NULL) {
     if (length(xgrid)>0 & xvar == "Y.time") {
     } else if (type=="obs") {
         if (xvar == "Y.1") { # fix to remove heavy tail: 
             xvar.values <- 1:xcut
         } else if (FALSE & xvar == "Y.time") { # 
-            xvar.values <- pseudo.dt[get(delta.var) == 1 & Y.dummy >= 1, sort(get(xvar))]
+            xvar.values <- pseudo.dt[before.tau == 1 & get(delta.var) == 1 & Y.dummy >= 1, sort(get(xvar))]
         } else {
-            xvar.values <- pseudo.dt[, sort(unique(get(xvar)))]
+            xvar.values <- pseudo.dt[before.tau == 1, sort(unique(get(xvar)))]
         }
         xvar.pick <- floor(seq(1, length(xvar.values), length=min(xcut, length(xvar.values))))
         xgrid <- xvar.values[xvar.pick][-c(1,xcut)]
     } else {
-        xgrid <- round(seq(pseudo.dt[, min(get(xvar))],
-                           pseudo.dt[, max(get(xvar))],
+        xgrid <- round(seq(pseudo.dt[before.tau == 1, min(get(xvar))],
+                           pseudo.dt[before.tau == 1, max(get(xvar))],
                            length=xcut)[-c(1,xcut)], 2)
     }
-    if (return.grid) return(c(unique(xgrid))) else return(paste0("(", xvar, ">=", unique(xgrid), ")"))
+    if (return.grid) {
+        return(c(unique(xgrid)))
+    } else {
+        return(paste0("(", xvar, ">=", unique(xgrid), ")"))
+    }
 }
 
 ######################################################################

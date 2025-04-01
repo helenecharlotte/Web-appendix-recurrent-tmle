@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (09:34) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (09:34) 
+## Last-Updated: Mar 27 2025 (18:30) 
 ##           By: Helene
-##     Update #: 1
+##     Update #: 18
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -15,7 +15,7 @@
 ## 
 ### Code:
 
-predict.hal <- function(seed = 13349,
+predict.hal <- function(seed = NULL, #13349,
                         fit.hals, ## output from fit.hal
                         pseudo.dt, ## tmp3,
                         delta.var = "delta",
@@ -32,8 +32,8 @@ predict.hal <- function(seed = 13349,
                         cut.two.way = 5,
                         cut.time.treatment = NULL,
                         cut.time.covar = NULL,
-                        penalize.treatment = FALSE,
-                        penalize.time = FALSE,
+                        stime = 0,
+                        scovar = 0,
                         cv.glmnet = FALSE,
                         V = 5,
                         lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
@@ -44,7 +44,7 @@ predict.hal <- function(seed = 13349,
                         browse3 = FALSE
                         ) {
 
-    set.seed(seed)
+    if (length(seed)>0) set.seed(seed)
 
     if (browse0) browser()
 
@@ -113,8 +113,6 @@ predict.hal <- function(seed = 13349,
     #--------------------------------
     #--- prediction part;
 
-    #pseudo.dt[, check.order := 1:nrow(pseudo.dt)]
-
     X.hal.a <- basis.fun(pseudo.dt = copy(pseudo.dt)[pseudo.dt[["observed.Y"]] == 1][, (treatment) := get(treatment.prediction)],
                          delta.var = delta.var,
                          delta.value = delta.value,
@@ -128,10 +126,9 @@ predict.hal <- function(seed = 13349,
                          cut.two.way = cut.two.way,
                          cut.time.treatment = cut.time.treatment,
                          cut.time.covar = cut.time.covar,
+                         stime = stime,
+                         scovar = scovar,
                          predict = TRUE)
-
-    #pseudo.dt[, grid.period := X.hal.a$hal.pseudo.dt[["grid.period"]]]
-    #pseudo.dt[, check.order1 := X.hal.a$hal.pseudo.dt[["check.order"]]]
 
     if (browse1) browser()
     
@@ -144,13 +141,10 @@ predict.hal <- function(seed = 13349,
         pseudo.dt <- do.call("rbind", lapply(1:nrow(history.Y), function(ii) {
             pseudo.ii <- copy(pseudo.dt)[pseudo.dt[["observed.Y"]] == 1][, (treatment) := get(treatment.prediction)][, which.Y := ii]
             for (jj in 1:ncol(history.Y)) {
-                #pseudo.ii[, (colnames(history.Y)[jj]) := history.Y[ii,jj]]
                 for (yvar in depend.Y.list[[jj]]) {
                     if (yvar == colnames(history.Y)[jj]) {
                         pseudo.ii[, (yvar) := history.Y[ii,jj]]
                     } else { #--- this to handle interactions
-                        #print(yvar)
-                        #print(strsplit(yvar, ":")[[1]][substr(strsplit(yvar, ":")[[1]], 1, 1) != "Y"])
                         pseudo.ii[, (yvar) := history.Y[ii,jj]*X.hal.a[, strsplit(yvar, ":")[[1]][substr(strsplit(yvar, ":")[[1]], 1, 1) != "Y"]]]
                     }
                 }
@@ -176,19 +170,6 @@ predict.hal <- function(seed = 13349,
 
         pseudo.dt[, observed.Y := X.hal.a[, "observed.Y"]]
 
-        if (FALSE) {
-            pseudo.dt[observed.Y == 1]
-            pseudo.dt[observed.Y == 1, table(get("Y.dummy >= 1TRUE"), Y.dummy)]
-            pseudo.dt[observed.Y == 1, table(get("Y.dummy >= 1TRUE"), get("Y.dummy >= 1TRUE:Y.time >= 903TRUE"), Y.dummy, Y.time >= 903)]
-            pseudo.dt[observed.Y == 0, table(get("Y.dummy >= 1TRUE"), get("Y.dummy >= 1TRUE:Y.time >= 903TRUE"), Y.dummy, Y.time >= 903)]
-            pseudo.dt[, table(get("Y.dummy >= 1TRUE"), get("Y.dummy >= 1TRUE:Y.time >= 903TRUE"))]
-            pseudo.dt[, table(Y.dummy, Y.time >= 903)]
-            pseudo.dt[observed.Y == 0, table(Y.dummy, Y.time >= 903)]
-            pseudo.dt[observed.Y == 1, table(Y.dummy, Y.time >= 903)]
-            pseudo.dt[observed.Y == 1, table(Y.dummy, Y.dummy & Y.time >= 903)]
-            #pseudo.dt[pseudo.dt[["observed.Y"]] == 1 & pseudo.dt[["Y.dummy >= 1TRUE"]]]
-        }
-        
         X.hal.a <- X.hal.a[, colnames(X.hal.a) != "observed.Y"]
         
         by.vars1 <- c("id", colnames(history.Y), treatment.prediction)
@@ -205,6 +186,7 @@ predict.hal <- function(seed = 13349,
     for (kk in 1:length(fit.hals)) {
         
         delta.value <- fit.hals[[kk]][["delta.value"]]
+        
         pseudo.dt[, (paste0("fit.lambda", delta.value)) := exp(predict(fit.hals[[kk]][["hal.fit"]], X.hal.a,
                                               newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
         pseudo.dt[, (paste0("fit.dLambda", delta.value)) := get(paste0("fit.lambda", delta.value))*risk.time]

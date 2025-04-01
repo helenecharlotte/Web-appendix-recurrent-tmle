@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:12) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (10:12) 
+## Last-Updated: Mar 20 2025 (09:54) 
 ##           By: Helene
-##     Update #: 2
+##     Update #: 16
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -18,22 +18,24 @@
 cv.fun <- function(loss.fun = lebesgue.loss.fun,
                    hal.pseudo.dt,
                    V = 5,
-                   seed = 19192,
+                   seed = NULL,
                    X,
                    time.var = "time",
                    penalty.factor = rep(1, ncol(X)),
                    delta.var = "delta",
                    delta.value = 1,
                    verbose = FALSE,
+                   browse = FALSE, 
                    lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj)))) {
 
-    set.seed(seed)
+    if (length(seed)>0) set.seed(seed)
 
+    if (browse) browser()
+    
     #-- split sample: 
     n <- length(hal.pseudo.dt[, unique(id)])
-    cv <- sample(1:n, size=n)
-    V2 <- ceiling(n/V)
-    cv.split <- lapply(1:V, function(vv) na.omit(cv[((vv-1)*V2+1):(vv*V2+1)]))
+    cv <- sample(rep(1:V, length = n), size = n)
+    cv.split <- lapply(1:V, function(vv) (1:n)[cv == vv])
 
     cve.list <- lapply(1:V, function(vv) {
 
@@ -54,7 +56,7 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
             train.fit <- try(glmnet(x=as.matrix(X.train), y=Y.train,
                                     offset=offset.train,
                                     family="poisson",
-                                    maxit=10000,
+                                    maxit=100000,
                                     penalty.factor=penalty.factor,
                                     lambda=lambda.cvs), silent=TRUE)
 
@@ -62,14 +64,14 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
                 train.fit <- glmnet(x=as.matrix(X.train), y=Y.train,
                                     offset=offset.train,
                                     family="poisson",
-                                    maxit=10000,
+                                    maxit=100000,
                                     penalty.factor=penalty.factor,
                                     lambda=lambda.cvs)
             } else if (all(train.fit$lambda==Inf)) {
                 train.fit <- glmnet(x=as.matrix(X.train), y=Y.train,
                                     offset=offset.train,
                                     family="poisson",
-                                    maxit=10000,
+                                    maxit=100000,
                                     penalty.factor=penalty.factor,
                                     lambda=lambda.cvs)
             }
@@ -80,6 +82,7 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
                             hal.pseudo.dt = hal.pseudo.dt,
                             test.set = test.set,
                             X = X,
+                            time.var = time.var, 
                             lambda.cv = lambda.cv,
                             delta.var = delta.var,
                             delta.value = delta.value))

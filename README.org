@@ -25,6 +25,19 @@ library(Matrix)
 library(rlist)
 #+END_SRC 
 
+** Source relevant scripts
+
+#+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
+#+BEGIN_SRC R  :results code :exports code  :session *R* :cache yes  
+source("./R/tmle.estimation.fun.R")
+source("./R/sim.data.recurrent.R")
+source("./R/lebesgue.loss.fun.R")
+source("./R/cv.fun.R")     
+source("./R/basis.fun.R")
+source("./R/fit.hal.R")
+source("./R/predict.hal.R")
+#+END_SRC 
+
 ** Simulating recurrent events data
 
 The function =sim.data.outer= simulates data directly for each
@@ -34,7 +47,7 @@ size =n= = 200 from simulation setting 1A:
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results both :exports both  :session *R* :cache yes  
 sim.dt <- sim.data.outer(n = 200, sim.setting = "1A", cens.percentage = "low", seed = 200)
-sim.dt 
+sim.dt  
 #+END_SRC 
 
 #+begin_example
@@ -67,24 +80,25 @@ The standard nonparametric estimator as follows:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
-standard.np <- tmle.est.fun(dt, 
+standard.np <- tmle.est.fun(sim.dt, 
                             fit.type1 = "Surv(tstart, tstop, delta == 1)~A",
                             fit.type2 = "Surv(tstart, tstop, delta == 2)~A",
                             fit.type0 = "Surv(tstart, tstop, delta == 0)~A",
                             fit.treatment = "A~1", 
                             standard.np = TRUE)
-print(standard.np) 
+print(standard.np)   
 #+END_SRC 
 
+#+RESULTS[(2025-04-01 13:43:44) f5ed9430fac5331a24b4b4502ed9b09b08c76ba2]:
 :    np.est     np.se 
-: 4.0792196 0.5958312
+: 3.0485854 0.4518129
 
 The simple "baseline" version of the TMLE (based on Cox models for
 initial estimation) as follows:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
-baseline.tmle <- tmle.est.fun(dt, 
+baseline.tmle <- tmle.est.fun(sim.dt, 
                               fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L1+L2+L3", 
                                                fit = "cox"),
                               fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L1+L2+L3",
@@ -92,13 +106,13 @@ baseline.tmle <- tmle.est.fun(dt,
                               fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L1+L2+L3",
                                                fit = "cox"),
                               fit.treatment = "A~L1+L2+L3", 
-                              baseline.tmle = TRUE)
+                              baseline.tmle = TRUE) 
 print(baseline.tmle) 
 #+END_SRC 
 
-#+RESULTS[(2024-10-15 11:16:45) 91c8ee78f5649815ad19921d9edc48e4e306826b]:
+#+RESULTS[(2025-04-01 13:43:58) 6ce1316ac6dede698e1408c809393f13085eea49]:
 :             g.est          tmle.est           tmle.se positivity.issues 
-:         4.0562621         4.0562621         0.5663507         0.0000000
+:         2.9992645         2.9011608         0.3988531         0.0000000
 
 
 A "naive" g-computation formula estimator based on a Cox model as
@@ -106,7 +120,7 @@ follows:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
-naive.gcomp <- tmle.est.fun(dt, 
+naive.gcomp <- tmle.est.fun(sim.dt, 
                             fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L1+L2+L3", 
                                              fit = "cox"),
                             fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L1+L2+L3",
@@ -118,8 +132,9 @@ naive.gcomp <- tmle.est.fun(dt,
 print(naive.gcomp) 
 #+END_SRC 
 
-#+RESULTS[(2024-10-15 11:14:49) 7b85529549321a7b0b575a3bb7f20fa95d67d2ce]:
-: [1] 4.056262
+#+RESULTS[(2025-04-01 13:44:09) 999b98741075a068b4bd7d15063341e30f53d6e9]:
+: [1] 2.999265
+
 
 
 The general version of the TMLE (based on Cox models for initial
@@ -127,7 +142,7 @@ estimation) as follows:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
-cox.tmle <- tmle.est.fun(dt, 
+cox.tmle <- tmle.est.fun(sim.dt, 
                          fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L1+L2+L3+Y.dummy", 
                                           fit = "cox"),
                          fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L1+L2+L3+Y.dummy",
@@ -135,11 +150,12 @@ cox.tmle <- tmle.est.fun(dt,
                          fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L1+L2+L3+Y.dummy",
                                           fit = "cox"),
                          fit.treatment = "A~L1+L2+L3")
-print(cox.tmle) 
+print(cox.tmle)  
 #+END_SRC 
 
+#+RESULTS[(2025-04-01 13:45:16) 681806342042b8b1d1c90fb87a05f14a37485fd8]:
 :             g.est          tmle.est           tmle.se positivity.issues 
-:         4.0747389         4.3383902         0.5813513         0.0000000
+:         3.1983152         2.9742184         0.4052477         0.0000000
 
 
 The general version of the TMLE (based on HAL for initial estimation)
@@ -147,7 +163,7 @@ as follows:
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
-hal.tmle <- tmle.est.fun(dt, 
+hal.tmle <- tmle.est.fun(sim.dt, 
                          fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L1+L2+L3+Y.dummy", 
                                           fit = "hal"),
                          fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L1+L2+L3+Y.dummy",
@@ -155,18 +171,19 @@ hal.tmle <- tmle.est.fun(dt,
                          fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L1+L2+L3+Y.dummy",
                                           fit = "hal"),
                          fit.treatment = "A~L1+L2+L3")
-print(hal.tmle) 
+print(hal.tmle)   
 #+END_SRC 
 
+#+RESULTS[(2025-04-01 13:47:08) 6d1a2c1b2eaff08ed67465456fa3f7a22b5f357f]:
 :             g.est          tmle.est           tmle.se positivity.issues 
-:         4.7353457         4.1883274         0.5273055         0.0000000
+:         2.9974684         2.9974684         0.3997577         0.0000000
 
 
 ** =verbose= option
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
 #+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes
-hal.tmle <- tmle.est.fun(dt,  
+hal.tmle <- tmle.est.fun(sim.dt,  
                          fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L1+L2+L3+Y.dummy", 
                                           fit = "hal"),
                          fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L1+L2+L3+Y.dummy",
@@ -174,24 +191,24 @@ hal.tmle <- tmle.est.fun(dt,
                          fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L1+L2+L3+Y.dummy",
                                           fit = "hal"),
                          fit.treatment = "A~L1+L2+L3",
-                         verbose = TRUE) 
+                         verbose = TRUE)  
 #+END_SRC 
 
-#+RESULTS[(2024-10-15 11:32:22) 05fedc320cc061948f5a179a3e85e90b4c3f03b1]:
+#+RESULTS[(2025-04-01 13:49:40) d9b52c9f031b5d5d9184252fdb033c250b52a0a6]:
 #+begin_example
 Call:
-coxph(formula = as.formula(gsub("\\+Y.time.dummy", "", fit.type0[["model"]])), 
-    data = dt)
+coxph(formula = as.formula(fit.type0[["model"]]), data = dt, 
+    control = coxph.control(timefix = FALSE))
 
-                coef exp(coef) se(coef)      z          p
-A            0.48711   1.62760  0.29803  1.634      0.102
-L1           1.21752   3.37880  0.25120  4.847 0.00000126
-L2           0.03612   1.03678  0.48354  0.075      0.940
-L3          -0.02919   0.97123  0.46810 -0.062      0.950
-Y.dummyTRUE  1.79334   6.00949  0.34611  5.181 0.00000022
+               coef exp(coef) se(coef)      z             p
+A           -0.5297    0.5888   0.3044 -1.740        0.0818
+L1           1.1145    3.0482   0.2853  3.907 0.00009336270
+L2          -1.2787    0.2784   0.5402 -2.367        0.0179
+L3           0.5729    1.7734   0.5044  1.136        0.2561
+Y.dummyTRUE  2.0128    7.4841   0.3464  5.810 0.00000000623
 
-Likelihood ratio test=50.15  on 5 df, p=0.000000001292
-n= 1425, number of events= 57 
+Likelihood ratio test=67.14  on 5 df, p=0.0000000000004037
+n= 1155, number of events= 52 
 
 Call:
 glm(formula = as.formula(fit.treatment[["model"]]), family = binomial, 
@@ -213,360 +230,420 @@ AIC: 283.34
 Number of Fisher Scoring iterations: 3
 
 Call:
-coxph(formula = as.formula(gsub("\\+Y.time.dummy", "", fit.type1[["model"]])), 
-    data = dt)
+coxph(formula = as.formula(fit.type1[["model"]]), data = dt, 
+    control = coxph.control(timefix = FALSE))
 
-                coef exp(coef) se(coef)       z          p
-A           -0.81334   0.44337  0.06211 -13.095    < 2e-16
-L1          -0.26656   0.76601  0.05935  -4.491 0.00000708
-L2          -0.45578   0.63396  0.10854  -4.199 0.00002680
-L3           0.28028   1.32350  0.10732   2.612    0.00901
-Y.dummyTRUE  2.12037   8.33418  0.10015  21.173    < 2e-16
+                coef exp(coef) se(coef)       z         p
+A           -0.81922   0.44077  0.07234 -11.325   < 2e-16
+L1          -0.28779   0.74992  0.06894  -4.175 0.0000299
+L2          -0.07813   0.92484  0.12375  -0.631    0.5278
+L3           0.20269   1.22469  0.11757   1.724    0.0847
+Y.dummyTRUE  2.22837   9.28472  0.09883  22.546   < 2e-16
 
-Likelihood ratio test=1168  on 5 df, p=< 2.2e-16
-n= 1425, number of events= 1225 
+Likelihood ratio test=1058  on 5 df, p=< 2.2e-16
+n= 1155, number of events= 955 
 Call:
-coxph(formula = as.formula(gsub("\\+Y.time.dummy", "", fit.type2[["model"]])), 
-    data = dt)
+coxph(formula = as.formula(fit.type2[["model"]]), data = dt, 
+    control = coxph.control(timefix = FALSE))
 
-               coef exp(coef) se(coef)      z             p
-A           -0.6484    0.5229   0.1796 -3.610      0.000307
-L1           0.7768    2.1745   0.1623  4.786 0.00000170334
-L2           0.1506    1.1626   0.3056  0.493      0.622067
-L3          -0.2711    0.7625   0.2982 -0.909      0.363268
-Y.dummyTRUE  1.2872    3.6227   0.2162  5.953 0.00000000262
+                coef exp(coef) se(coef)      z                 p
+A           -0.48104   0.61814  0.17762 -2.708           0.00676
+L1           0.79008   2.20358  0.17159  4.605 0.000004132864543
+L2           0.90018   2.46005  0.31352  2.871           0.00409
+L3           0.08455   1.08823  0.28813  0.293           0.76918
+Y.dummyTRUE  1.45556   4.28689  0.19574  7.436 0.000000000000104
 
-Likelihood ratio test=75.78  on 5 df, p=6.398e-15
-n= 1425, number of events= 143 
+Likelihood ratio test=102.1  on 5 df, p=< 2.2e-16
+n= 1155, number of events= 148 
 [1] "--------------------------------------------"
 [1] "delta = 1"
 [1] "--------------------------------------------"
-102 x 1 sparse Matrix of class "dgCMatrix"
-                                                                              s1
-(Intercept)                                                1.8887431664256235653
-Aobs                                                      -0.8743100890828677807
-grid.period >= 2FALSE                                     -0.6793269204257048610
-grid.period >= 2TRUE                                      -0.0000000000003794438
-grid.period >= 3TRUE                                      -0.0024898441112924841
-grid.period >= 4TRUE                                       0.3176509035692542948
-grid.period >= 5TRUE                                      -0.0859820629693285599
-grid.period >= 6TRUE                                       0.2246897076231621215
-grid.period >= 7TRUE                                       0.0531393320747068978
-grid.period >= 8TRUE                                       0.0494235091408590163
-grid.period >= 9TRUE                                       0.1007157236663819011
-grid.period >= 10TRUE                                     -0.0004337139344675778
-grid.period >= 11TRUE                                     -0.0167695195536629420
-grid.period >= 12TRUE                                      0.1887572682653836098
-grid.period >= 13TRUE                                      0.0838585073776360601
-grid.period >= 14TRUE                                     -0.1969693019109537979
-L1 >= -0.833715458400548TRUE                              -0.2679735231610365642
-L1 >= -0.705194697249681TRUE                              -0.1952942250258995760
-L1 >= -0.64289392856881TRUE                               -0.4132309159780677144
-L1 >= -0.469351418316364TRUE                               .                    
-L1 >= -0.261056848801672TRUE                               .                    
-L1 >= -0.0792786167003214TRUE                              .                    
-L1 >= 0.0257286885753274TRUE                               .                    
-L1 >= 0.1221280884929TRUE                                  .                    
-L1 >= 0.18986929114908TRUE                                 .                    
-L1 >= 0.306553478352726TRUE                                .                    
-L1 >= 0.423200170509517TRUE                                0.2004662277363342682
-L1 >= 0.598172891885042TRUE                                .                    
-L1 >= 0.809284868184477TRUE                                .                    
-L2 >= 0.0791329317726195TRUE                               .                    
-L2 >= 0.153328083688393TRUE                               -0.0085780864876755947
-L2 >= 0.222847626311705TRUE                                .                    
-L2 >= 0.306758977705613TRUE                                .                    
-L2 >= 0.364339190768078TRUE                                .                    
-L2 >= 0.437415588879958TRUE                                .                    
-L2 >= 0.537194520933554TRUE                                .                    
-L2 >= 0.605707243317738TRUE                               -0.0049640472717219410
-L2 >= 0.64908121037297TRUE                                 .                    
-L2 >= 0.732908373232931TRUE                               -0.0427700276225649184
-L2 >= 0.777240771334618TRUE                                .                    
-L2 >= 0.829584161285311TRUE                                .                    
-L2 >= 0.893769723363221TRUE                                .                    
-L3 >= 0.0690373829565942TRUE                               .                    
-L3 >= 0.131851327838376TRUE                                .                    
-L3 >= 0.198192747309804TRUE                                .                    
-L3 >= 0.258037420222536TRUE                                .                    
-L3 >= 0.338127280119807TRUE                                .                    
-L3 >= 0.395277522271499TRUE                                .                    
-L3 >= 0.442311989376321TRUE                                .                    
-L3 >= 0.496472600148991TRUE                                .                    
-L3 >= 0.610891973832622TRUE                                .                    
-L3 >= 0.654566471930593TRUE                                .                    
-L3 >= 0.734892187640071TRUE                               -0.0136426728496299669
-L3 >= 0.807744707213715TRUE                                .                    
-L3 >= 0.887727773981169TRUE                                .                    
-Y.dummy >= 1TRUE                                           1.5373122983661857699
-L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE -0.0591365495417015968
-L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   .                    
-L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE  -0.0362171449345277743
-L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    0.0879851140249713615
-L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE  -0.0279063956033116685
-L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .                    
-L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  .                    
-L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   0.4097733687064861186
-L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   .                    
-L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    0.5082223568420702886
-L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   .                    
-L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .                    
-L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              .                    
-L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              0.0409177727816824183
-L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               .                    
-Aobs:L1 >= -0.833715458400548TRUE                          .                    
-Aobs:L1 >= 0.0257286885753274TRUE                          .                    
-Aobs:L1 >= 0.809284868184477TRUE                           .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  0.0268456143797248629
-L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .                    
-L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE    .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .                    
-L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE    .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    .                    
-L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              .                    
-L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               0.0417397133559579414
-L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE               .                    
-Aobs:L2 >= 0.0791329317726195TRUE                          .                    
-Aobs:L2 >= 0.537194520933554TRUE                           .                    
-Aobs:L2 >= 0.893769723363221TRUE                           .                    
-L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              .                    
-L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               .                    
-L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE               .                    
-Aobs:L3 >= 0.0690373829565942TRUE                          .                    
-Aobs:L3 >= 0.442311989376321TRUE                           .                    
-Aobs:L3 >= 0.887727773981169TRUE                           .                    
-Aobs:Y.dummy >= 1TRUE                                      .                    
+122 x 1 sparse Matrix of class "dgCMatrix"
+                                                                     s1
+(Intercept)                                                8.861777e-01
+Aobs                                                      -9.751998e-01
+grid.time >= 0.168546122360514FALSE                       -1.199828e+00
+grid.time >= 0.168546122360514TRUE                        -3.723417e-13
+grid.time >= 0.238327923398744TRUE                         4.461688e-01
+grid.time >= 0.299537030939432TRUE                        -9.723909e-02
+grid.time >= 0.336639648865394TRUE                         1.349250e-01
+grid.time >= 0.37468994035721TRUE                         -2.737428e-15
+grid.time >= 0.413798061877036TRUE                         2.240238e-01
+grid.time >= 0.43731966609911TRUE                          7.351178e-16
+grid.time >= 0.469737634785779TRUE                         1.729182e-01
+grid.time >= 0.485489530177817TRUE                         1.329243e-18
+grid.time >= 0.512767699252823TRUE                        -3.091187e-01
+grid.time >= 0.529009042546206TRUE                         1.888847e-15
+grid.time >= 0.555898830185121TRUE                         4.936265e-01
+grid.time >= 0.579842707003235TRUE                         8.091119e-16
+grid.time >= 0.601423944835104TRUE                        -4.676396e-01
+grid.time >= 0.62152338588918TRUE                          5.416880e-01
+grid.time >= 0.652044739809401TRUE                        -1.324613e-15
+grid.time >= 0.672916656855403TRUE                        -7.490144e-02
+grid.time >= 0.696796742232829TRUE                         1.533086e-15
+grid.time >= 0.719892588521286TRUE                         2.412907e-01
+grid.time >= 0.738331644848868TRUE                        -4.194552e-01
+grid.time >= 0.763893576332574TRUE                        -1.647578e-15
+grid.time >= 0.799000864932317TRUE                         2.441204e-01
+grid.time >= 0.831646590258747TRUE                         1.464528e-01
+grid.time >= 0.859678654829883TRUE                        -5.870422e-03
+grid.time >= 0.884208992343323TRUE                        -8.655570e-16
+grid.time >= 0.913160852879959TRUE                        -6.542271e-02
+grid.time >= 0.94259547304072TRUE                         -2.689434e-01
+grid.time >= 0.981905740247754TRUE                         3.583490e-01
+grid.time >= 1.00655593329408TRUE                         -1.676946e-01
+grid.time >= 1.04708210276801TRUE                          2.054517e-15
+grid.time >= 1.08397636852143TRUE                          3.634595e-01
+grid.time >= 1.11547948864029TRUE                         -2.712715e-01
+grid.time >= 1.15890343641261TRUE                         -6.339015e-01
+L1 >= -0.833715458400548TRUE                              -3.473591e-01
+L1 >= -0.705194697249681TRUE                              -1.760864e-01
+L1 >= -0.64289392856881TRUE                                .           
+L1 >= -0.469351418316364TRUE                               .           
+L1 >= -0.261056848801672TRUE                              -2.321576e-01
+L1 >= -0.0792786167003214TRUE                              .           
+L1 >= 0.0257286885753274TRUE                               .           
+L1 >= 0.1221280884929TRUE                                  .           
+L1 >= 0.18986929114908TRUE                                 1.005701e-01
+L1 >= 0.306553478352726TRUE                                .           
+L1 >= 0.423200170509517TRUE                                2.370476e-01
+L1 >= 0.598172891885042TRUE                                .           
+L1 >= 0.809284868184477TRUE                                .           
+L2 >= 0.0791329317726195TRUE                               .           
+L2 >= 0.153328083688393TRUE                                .           
+L2 >= 0.222847626311705TRUE                                .           
+L2 >= 0.306758977705613TRUE                                .           
+L2 >= 0.364339190768078TRUE                                .           
+L2 >= 0.437415588879958TRUE                                .           
+L2 >= 0.537194520933554TRUE                                .           
+L2 >= 0.605707243317738TRUE                                .           
+L2 >= 0.64908121037297TRUE                                 .           
+L2 >= 0.732908373232931TRUE                                .           
+L2 >= 0.777240771334618TRUE                               -3.489985e-03
+L2 >= 0.829584161285311TRUE                               -5.793983e-03
+L2 >= 0.893769723363221TRUE                                .           
+L3 >= 0.0690373829565942TRUE                               .           
+L3 >= 0.131851327838376TRUE                                .           
+L3 >= 0.198192747309804TRUE                                .           
+L3 >= 0.258037420222536TRUE                                .           
+L3 >= 0.338127280119807TRUE                                1.121976e-03
+L3 >= 0.395277522271499TRUE                                .           
+L3 >= 0.442311989376321TRUE                                .           
+L3 >= 0.496472600148991TRUE                                .           
+L3 >= 0.610891973832622TRUE                                .           
+L3 >= 0.654566471930593TRUE                                .           
+L3 >= 0.734892187640071TRUE                                .           
+L3 >= 0.807744707213715TRUE                                .           
+L3 >= 0.887727773981169TRUE                                .           
+Y.dummy >= 1TRUE                                           1.953202e+00
+L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE  .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   3.999323e-01
+L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    1.667945e-01
+L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .           
+L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              .           
+L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              .           
+L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L1 >= -0.833715458400548TRUE                          .           
+Aobs:L1 >= 0.0257286885753274TRUE                          .           
+Aobs:L1 >= 0.809284868184477TRUE                           .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE   -2.741394e-02
+L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE    .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    .           
+L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              .           
+L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               .           
+L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE              -5.377511e-02
+Aobs:L2 >= 0.0791329317726195TRUE                          .           
+Aobs:L2 >= 0.537194520933554TRUE                           .           
+Aobs:L2 >= 0.893769723363221TRUE                           .           
+L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              .           
+L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               6.836030e-02
+L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L3 >= 0.0690373829565942TRUE                          .           
+Aobs:L3 >= 0.442311989376321TRUE                           .           
+Aobs:L3 >= 0.887727773981169TRUE                           .           
+Aobs:Y.dummy >= 1TRUE                                      .           
 [1] "--------------------------------------------"
 [1] "delta = 2"
 [1] "--------------------------------------------"
-102 x 1 sparse Matrix of class "dgCMatrix"
-                                                                               s1
-(Intercept)                                               -0.76444806860348435418
-Aobs                                                      -0.85708540460795368254
-grid.period >= 2FALSE                                     -0.74304988216182576988
-grid.period >= 2TRUE                                      -0.00000000000004336792
-grid.period >= 3TRUE                                       0.15714578128139111701
-grid.period >= 4TRUE                                       0.30253015330075549993
-grid.period >= 5TRUE                                      -0.37182643352788052882
-grid.period >= 6TRUE                                       0.14209685887048778552
-grid.period >= 7TRUE                                       0.61961143351083414199
-grid.period >= 8TRUE                                      -0.72891627657591406830
-grid.period >= 9TRUE                                       0.53270666433567537279
-grid.period >= 10TRUE                                     -0.27712992925482482498
-grid.period >= 11TRUE                                     -0.89704236921869284771
-grid.period >= 12TRUE                                      1.08535920622954251691
-grid.period >= 13TRUE                                      0.41314114081563940717
-grid.period >= 14TRUE                                      0.07223494054354083482
-L1 >= -0.833715458400548TRUE                               .                     
-L1 >= -0.705194697249681TRUE                               .                     
-L1 >= -0.64289392856881TRUE                                0.16128741437537019721
-L1 >= -0.469351418316364TRUE                               0.05850087921225941012
-L1 >= -0.261056848801672TRUE                               0.32629559119777451492
-L1 >= -0.0792786167003214TRUE                              .                     
-L1 >= 0.0257286885753274TRUE                               .                     
-L1 >= 0.1221280884929TRUE                                  .                     
-L1 >= 0.18986929114908TRUE                                 0.05495738998070812120
-L1 >= 0.306553478352726TRUE                                .                     
-L1 >= 0.423200170509517TRUE                                0.04083614557130373079
-L1 >= 0.598172891885042TRUE                                .                     
-L1 >= 0.809284868184477TRUE                                .                     
-L2 >= 0.0791329317726195TRUE                               .                     
-L2 >= 0.153328083688393TRUE                                .                     
-L2 >= 0.222847626311705TRUE                                .                     
-L2 >= 0.306758977705613TRUE                                .                     
-L2 >= 0.364339190768078TRUE                                .                     
-L2 >= 0.437415588879958TRUE                                .                     
-L2 >= 0.537194520933554TRUE                                .                     
-L2 >= 0.605707243317738TRUE                               -0.28414729029958185613
-L2 >= 0.64908121037297TRUE                                 .                     
-L2 >= 0.732908373232931TRUE                                .                     
-L2 >= 0.777240771334618TRUE                                .                     
-L2 >= 0.829584161285311TRUE                                .                     
-L2 >= 0.893769723363221TRUE                                .                     
-L3 >= 0.0690373829565942TRUE                               0.34558303272559814934
-L3 >= 0.131851327838376TRUE                                .                     
-L3 >= 0.198192747309804TRUE                                .                     
-L3 >= 0.258037420222536TRUE                                .                     
-L3 >= 0.338127280119807TRUE                                .                     
-L3 >= 0.395277522271499TRUE                                .                     
-L3 >= 0.442311989376321TRUE                                .                     
-L3 >= 0.496472600148991TRUE                                .                     
-L3 >= 0.610891973832622TRUE                                .                     
-L3 >= 0.654566471930593TRUE                               -0.06985788753378573135
-L3 >= 0.734892187640071TRUE                               -0.07029726292746314720
-L3 >= 0.807744707213715TRUE                                .                     
-L3 >= 0.887727773981169TRUE                                .                     
-Y.dummy >= 1TRUE                                           .                     
-L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE  .                     
-L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  .                     
-L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   .                     
-L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE   .                     
-L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .                     
-L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    0.55942983549932812082
-L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE   .                     
-L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .                     
-L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .                     
-L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  0.03678491881965309518
-L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  0.02743506753082095712
-L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   .                     
-L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .                     
-L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   .                     
-L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    .                     
-L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .                     
-L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   .                     
-L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .                     
-L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              .                     
-L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              0.02905254628142718565
-L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               0.58532750110242759423
-Aobs:L1 >= -0.833715458400548TRUE                          .                     
-Aobs:L1 >= 0.0257286885753274TRUE                          .                     
-Aobs:L1 >= 0.809284868184477TRUE                           .                     
-L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  .                     
-L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .                     
-L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .                     
-L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .                     
-L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    .                     
-L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE    0.31057634288130070432
-L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .                     
-L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE    .                     
-L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    1.14726986100822747616
-L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              0.43462717847832937901
-L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               0.32804656182913066731
-L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE               0.11802900071321001385
-Aobs:L2 >= 0.0791329317726195TRUE                          .                     
-Aobs:L2 >= 0.537194520933554TRUE                           .                     
-Aobs:L2 >= 0.893769723363221TRUE                          -0.06203313661176490523
-L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              .                     
-L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               .                     
-L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE              -0.08173547484825401110
-Aobs:L3 >= 0.0690373829565942TRUE                          .                     
-Aobs:L3 >= 0.442311989376321TRUE                           .                     
-Aobs:L3 >= 0.887727773981169TRUE                           .                     
-Aobs:Y.dummy >= 1TRUE                                      0.21145903194004869730
+122 x 1 sparse Matrix of class "dgCMatrix"
+                                                                     s1
+(Intercept)                                               -1.637252e+00
+Aobs                                                      -5.007071e-01
+grid.time >= 0.168546122360514FALSE                        1.738630e-01
+grid.time >= 0.168546122360514TRUE                        -7.326745e-14
+grid.time >= 0.238327923398744TRUE                         7.405097e-01
+grid.time >= 0.299537030939432TRUE                        -1.446342e+00
+grid.time >= 0.336639648865394TRUE                         1.480706e+00
+grid.time >= 0.37468994035721TRUE                         -6.516256e-15
+grid.time >= 0.413798061877036TRUE                         2.786511e-01
+grid.time >= 0.43731966609911TRUE                         -1.381353e-15
+grid.time >= 0.469737634785779TRUE                         1.818234e-02
+grid.time >= 0.485489530177817TRUE                        -1.454697e-15
+grid.time >= 0.512767699252823TRUE                         7.498145e-01
+grid.time >= 0.529009042546206TRUE                        -2.259686e-15
+grid.time >= 0.555898830185121TRUE                        -1.241097e+00
+grid.time >= 0.579842707003235TRUE                         3.665386e-15
+grid.time >= 0.601423944835104TRUE                         9.223208e-01
+grid.time >= 0.62152338588918TRUE                          2.762935e-02
+grid.time >= 0.652044739809401TRUE                         2.293659e-15
+grid.time >= 0.672916656855403TRUE                         5.692751e-01
+grid.time >= 0.696796742232829TRUE                        -1.009630e-14
+grid.time >= 0.719892588521286TRUE                        -6.906821e-01
+grid.time >= 0.738331644848868TRUE                        -2.026782e-01
+grid.time >= 0.763893576332574TRUE                        -3.012255e-15
+grid.time >= 0.799000864932317TRUE                        -2.005785e-01
+grid.time >= 0.831646590258747TRUE                         1.198040e+00
+grid.time >= 0.859678654829883TRUE                        -1.697222e+00
+grid.time >= 0.884208992343323TRUE                        -1.826714e-14
+grid.time >= 0.913160852879959TRUE                         6.689981e-01
+grid.time >= 0.94259547304072TRUE                          7.505400e-01
+grid.time >= 0.981905740247754TRUE                        -9.921354e-01
+grid.time >= 1.00655593329408TRUE                          1.336732e+00
+grid.time >= 1.04708210276801TRUE                          2.399390e-14
+grid.time >= 1.08397636852143TRUE                         -3.576643e-01
+grid.time >= 1.11547948864029TRUE                          5.187365e-02
+grid.time >= 1.15890343641261TRUE                         -8.791140e-01
+L1 >= -0.833715458400548TRUE                               .           
+L1 >= -0.705194697249681TRUE                               .           
+L1 >= -0.64289392856881TRUE                                7.377021e-02
+L1 >= -0.469351418316364TRUE                               .           
+L1 >= -0.261056848801672TRUE                               .           
+L1 >= -0.0792786167003214TRUE                              .           
+L1 >= 0.0257286885753274TRUE                               .           
+L1 >= 0.1221280884929TRUE                                  .           
+L1 >= 0.18986929114908TRUE                                 3.339544e-02
+L1 >= 0.306553478352726TRUE                                .           
+L1 >= 0.423200170509517TRUE                                5.427605e-01
+L1 >= 0.598172891885042TRUE                                1.565908e-02
+L1 >= 0.809284868184477TRUE                                .           
+L2 >= 0.0791329317726195TRUE                               .           
+L2 >= 0.153328083688393TRUE                                .           
+L2 >= 0.222847626311705TRUE                                .           
+L2 >= 0.306758977705613TRUE                                .           
+L2 >= 0.364339190768078TRUE                                .           
+L2 >= 0.437415588879958TRUE                                1.247035e-01
+L2 >= 0.537194520933554TRUE                                .           
+L2 >= 0.605707243317738TRUE                                .           
+L2 >= 0.64908121037297TRUE                                 .           
+L2 >= 0.732908373232931TRUE                                .           
+L2 >= 0.777240771334618TRUE                                .           
+L2 >= 0.829584161285311TRUE                                .           
+L2 >= 0.893769723363221TRUE                                .           
+L3 >= 0.0690373829565942TRUE                               .           
+L3 >= 0.131851327838376TRUE                                .           
+L3 >= 0.198192747309804TRUE                                .           
+L3 >= 0.258037420222536TRUE                                .           
+L3 >= 0.338127280119807TRUE                                .           
+L3 >= 0.395277522271499TRUE                                .           
+L3 >= 0.442311989376321TRUE                                .           
+L3 >= 0.496472600148991TRUE                                .           
+L3 >= 0.610891973832622TRUE                                .           
+L3 >= 0.654566471930593TRUE                                .           
+L3 >= 0.734892187640071TRUE                                .           
+L3 >= 0.807744707213715TRUE                                .           
+L3 >= 0.887727773981169TRUE                                .           
+Y.dummy >= 1TRUE                                           .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE  .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  9.431702e-02
+L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .           
+L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              3.937391e-01
+L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              .           
+L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L1 >= -0.833715458400548TRUE                          .           
+Aobs:L1 >= 0.0257286885753274TRUE                          .           
+Aobs:L1 >= 0.809284868184477TRUE                           .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    7.084477e-02
+L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE    .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE    .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    .           
+L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              7.211965e-01
+L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               6.207807e-02
+L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L2 >= 0.0791329317726195TRUE                          .           
+Aobs:L2 >= 0.537194520933554TRUE                           .           
+Aobs:L2 >= 0.893769723363221TRUE                           .           
+L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              .           
+L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               .           
+L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L3 >= 0.0690373829565942TRUE                          .           
+Aobs:L3 >= 0.442311989376321TRUE                           .           
+Aobs:L3 >= 0.887727773981169TRUE                           .           
+Aobs:Y.dummy >= 1TRUE                                      .           
 [1] "--------------------------------------------"
 [1] "delta = 0"
 [1] "--------------------------------------------"
-102 x 1 sparse Matrix of class "dgCMatrix"
-                                                                              s1
-(Intercept)                                               -1.9739332948186629757
-Aobs                                                       0.5957525786707180693
-grid.period >= 2FALSE                                     -2.5549311455666647852
-grid.period >= 2TRUE                                      -0.0000000000005087595
-grid.period >= 3TRUE                                      -0.4105881106006318837
-grid.period >= 4TRUE                                       0.6105189300799354069
-grid.period >= 5TRUE                                      -0.1653457373751274218
-grid.period >= 6TRUE                                       0.0585934926567797040
-grid.period >= 7TRUE                                       0.3976583260913172935
-grid.period >= 8TRUE                                       0.1336105168278678978
-grid.period >= 9TRUE                                      -0.5400542231867746512
-grid.period >= 10TRUE                                      0.5081259698558812099
-grid.period >= 11TRUE                                      0.5366710077476691820
-grid.period >= 12TRUE                                     -0.0028415628306989868
-grid.period >= 13TRUE                                      0.5908692997840800931
-grid.period >= 14TRUE                                     -1.3230196485054428468
-L1 >= -0.833715458400548TRUE                               .                    
-L1 >= -0.705194697249681TRUE                               .                    
-L1 >= -0.64289392856881TRUE                                .                    
-L1 >= -0.469351418316364TRUE                               .                    
-L1 >= -0.261056848801672TRUE                               .                    
-L1 >= -0.0792786167003214TRUE                              .                    
-L1 >= 0.0257286885753274TRUE                               .                    
-L1 >= 0.1221280884929TRUE                                  .                    
-L1 >= 0.18986929114908TRUE                                 .                    
-L1 >= 0.306553478352726TRUE                                .                    
-L1 >= 0.423200170509517TRUE                                0.6194886383415455500
-L1 >= 0.598172891885042TRUE                                .                    
-L1 >= 0.809284868184477TRUE                                .                    
-L2 >= 0.0791329317726195TRUE                               .                    
-L2 >= 0.153328083688393TRUE                                .                    
-L2 >= 0.222847626311705TRUE                                .                    
-L2 >= 0.306758977705613TRUE                                .                    
-L2 >= 0.364339190768078TRUE                                .                    
-L2 >= 0.437415588879958TRUE                                .                    
-L2 >= 0.537194520933554TRUE                                .                    
-L2 >= 0.605707243317738TRUE                                .                    
-L2 >= 0.64908121037297TRUE                                 .                    
-L2 >= 0.732908373232931TRUE                                .                    
-L2 >= 0.777240771334618TRUE                                .                    
-L2 >= 0.829584161285311TRUE                                .                    
-L2 >= 0.893769723363221TRUE                                .                    
-L3 >= 0.0690373829565942TRUE                               .                    
-L3 >= 0.131851327838376TRUE                                .                    
-L3 >= 0.198192747309804TRUE                                .                    
-L3 >= 0.258037420222536TRUE                                .                    
-L3 >= 0.338127280119807TRUE                                .                    
-L3 >= 0.395277522271499TRUE                                .                    
-L3 >= 0.442311989376321TRUE                                .                    
-L3 >= 0.496472600148991TRUE                                .                    
-L3 >= 0.610891973832622TRUE                                .                    
-L3 >= 0.654566471930593TRUE                                .                    
-L3 >= 0.734892187640071TRUE                                .                    
-L3 >= 0.807744707213715TRUE                                .                    
-L3 >= 0.887727773981169TRUE                                .                    
-Y.dummy >= 1TRUE                                           .                    
-L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE  .                    
-L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   .                    
-L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    .                    
-L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .                    
-L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .                    
-L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  .                    
-L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   .                    
-L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   .                    
-L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    .                    
-L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .                    
-L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   0.1431519627813451767
-L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .                    
-L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              0.3386073105266049210
-L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              0.9015007884291268425
-L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               .                    
-Aobs:L1 >= -0.833715458400548TRUE                          .                    
-Aobs:L1 >= 0.0257286885753274TRUE                          .                    
-Aobs:L1 >= 0.809284868184477TRUE                           .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  .                    
-L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .                    
-L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE    .                    
-L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .                    
-L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE    .                    
-L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    .                    
-L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              .                    
-L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               .                    
-L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE               .                    
-Aobs:L2 >= 0.0791329317726195TRUE                          .                    
-Aobs:L2 >= 0.537194520933554TRUE                           .                    
-Aobs:L2 >= 0.893769723363221TRUE                           .                    
-L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              .                    
-L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               .                    
-L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE               0.2125406819260627356
-Aobs:L3 >= 0.0690373829565942TRUE                          .                    
-Aobs:L3 >= 0.442311989376321TRUE                           .                    
-Aobs:L3 >= 0.887727773981169TRUE                           .                    
-Aobs:Y.dummy >= 1TRUE                                      0.1561976389620944317
+122 x 1 sparse Matrix of class "dgCMatrix"
+                                                                     s1
+(Intercept)                                               -1.163204e+00
+Aobs                                                      -3.692429e-01
+grid.time >= 0.168546122360514FALSE                       -1.384846e+00
+grid.time >= 0.168546122360514TRUE                        -2.390052e-13
+grid.time >= 0.238327923398744TRUE                        -6.968100e-01
+grid.time >= 0.299537030939432TRUE                         9.161104e-01
+grid.time >= 0.336639648865394TRUE                         5.739004e-02
+grid.time >= 0.37468994035721TRUE                          2.253008e-15
+grid.time >= 0.413798061877036TRUE                        -6.596308e-01
+grid.time >= 0.43731966609911TRUE                          2.650903e-15
+grid.time >= 0.469737634785779TRUE                         7.283587e-01
+grid.time >= 0.485489530177817TRUE                         1.167835e-15
+grid.time >= 0.512767699252823TRUE                        -1.300999e-01
+grid.time >= 0.529009042546206TRUE                         1.724333e-15
+grid.time >= 0.555898830185121TRUE                        -1.199156e-01
+grid.time >= 0.579842707003235TRUE                         5.134330e-16
+grid.time >= 0.601423944835104TRUE                         4.866853e-01
+grid.time >= 0.62152338588918TRUE                         -1.009000e+00
+grid.time >= 0.652044739809401TRUE                        -2.074585e-14
+grid.time >= 0.672916656855403TRUE                         7.116649e-01
+grid.time >= 0.696796742232829TRUE                        -1.042752e-14
+grid.time >= 0.719892588521286TRUE                         5.466701e-01
+grid.time >= 0.738331644848868TRUE                        -6.392472e-01
+grid.time >= 0.763893576332574TRUE                        -2.651582e-14
+grid.time >= 0.799000864932317TRUE                        -4.678091e-01
+grid.time >= 0.831646590258747TRUE                         9.993676e-01
+grid.time >= 0.859678654829883TRUE                        -6.524094e-02
+grid.time >= 0.884208992343323TRUE                        -1.519365e-15
+grid.time >= 0.913160852879959TRUE                        -3.927365e-02
+grid.time >= 0.94259547304072TRUE                         -2.033557e-01
+grid.time >= 0.981905740247754TRUE                        -5.281147e-01
+grid.time >= 1.00655593329408TRUE                         -4.540203e+00
+grid.time >= 1.04708210276801TRUE                         -3.816875e-14
+grid.time >= 1.08397636852143TRUE                          5.552550e+00
+grid.time >= 1.11547948864029TRUE                         -5.968461e+00
+grid.time >= 1.15890343641261TRUE                          4.642065e+00
+L1 >= -0.833715458400548TRUE                               .           
+L1 >= -0.705194697249681TRUE                               .           
+L1 >= -0.64289392856881TRUE                                .           
+L1 >= -0.469351418316364TRUE                               .           
+L1 >= -0.261056848801672TRUE                               .           
+L1 >= -0.0792786167003214TRUE                              .           
+L1 >= 0.0257286885753274TRUE                               .           
+L1 >= 0.1221280884929TRUE                                  .           
+L1 >= 0.18986929114908TRUE                                 .           
+L1 >= 0.306553478352726TRUE                                .           
+L1 >= 0.423200170509517TRUE                                9.313180e-01
+L1 >= 0.598172891885042TRUE                                .           
+L1 >= 0.809284868184477TRUE                                .           
+L2 >= 0.0791329317726195TRUE                               .           
+L2 >= 0.153328083688393TRUE                               -7.322146e-01
+L2 >= 0.222847626311705TRUE                                .           
+L2 >= 0.306758977705613TRUE                                .           
+L2 >= 0.364339190768078TRUE                                .           
+L2 >= 0.437415588879958TRUE                                .           
+L2 >= 0.537194520933554TRUE                                .           
+L2 >= 0.605707243317738TRUE                               -1.181461e-01
+L2 >= 0.64908121037297TRUE                                 .           
+L2 >= 0.732908373232931TRUE                                .           
+L2 >= 0.777240771334618TRUE                                .           
+L2 >= 0.829584161285311TRUE                                .           
+L2 >= 0.893769723363221TRUE                                .           
+L3 >= 0.0690373829565942TRUE                               .           
+L3 >= 0.131851327838376TRUE                                .           
+L3 >= 0.198192747309804TRUE                                .           
+L3 >= 0.258037420222536TRUE                                .           
+L3 >= 0.338127280119807TRUE                                .           
+L3 >= 0.395277522271499TRUE                                .           
+L3 >= 0.442311989376321TRUE                                .           
+L3 >= 0.496472600148991TRUE                                .           
+L3 >= 0.610891973832622TRUE                                .           
+L3 >= 0.654566471930593TRUE                                .           
+L3 >= 0.734892187640071TRUE                                .           
+L3 >= 0.807744707213715TRUE                               -3.713984e-01
+L3 >= 0.887727773981169TRUE                                .           
+Y.dummy >= 1TRUE                                           .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.0791329317726195TRUE  .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.0791329317726195TRUE  .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.0791329317726195TRUE   .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.537194520933554TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.537194520933554TRUE    .           
+L1 >= -0.833715458400548TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.0257286885753274TRUE:L2 >= 0.893769723363221TRUE   .           
+L1 >= 0.809284868184477TRUE:L2 >= 0.893769723363221TRUE    .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.0690373829565942TRUE  .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.0690373829565942TRUE   .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.442311989376321TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.442311989376321TRUE   9.962881e-02
+L1 >= 0.809284868184477TRUE:L3 >= 0.442311989376321TRUE    .           
+L1 >= -0.833715458400548TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.0257286885753274TRUE:L3 >= 0.887727773981169TRUE   .           
+L1 >= 0.809284868184477TRUE:L3 >= 0.887727773981169TRUE    .           
+L1 >= -0.833715458400548TRUE:Y.dummy >= 1TRUE              5.744840e-01
+L1 >= 0.0257286885753274TRUE:Y.dummy >= 1TRUE              4.252213e-01
+L1 >= 0.809284868184477TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L1 >= -0.833715458400548TRUE                          .           
+Aobs:L1 >= 0.0257286885753274TRUE                          1.264324e-01
+Aobs:L1 >= 0.809284868184477TRUE                           .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.0690373829565942TRUE  .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.0690373829565942TRUE   .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.442311989376321TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.442311989376321TRUE    .           
+L2 >= 0.893769723363221TRUE:L3 >= 0.442311989376321TRUE    .           
+L2 >= 0.0791329317726195TRUE:L3 >= 0.887727773981169TRUE   .           
+L2 >= 0.537194520933554TRUE:L3 >= 0.887727773981169TRUE   -1.026137e-01
+L2 >= 0.893769723363221TRUE:L3 >= 0.887727773981169TRUE    .           
+L2 >= 0.0791329317726195TRUE:Y.dummy >= 1TRUE              .           
+L2 >= 0.537194520933554TRUE:Y.dummy >= 1TRUE               .           
+L2 >= 0.893769723363221TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L2 >= 0.0791329317726195TRUE                          .           
+Aobs:L2 >= 0.537194520933554TRUE                           .           
+Aobs:L2 >= 0.893769723363221TRUE                           5.838932e-01
+L3 >= 0.0690373829565942TRUE:Y.dummy >= 1TRUE              1.000099e-01
+L3 >= 0.442311989376321TRUE:Y.dummy >= 1TRUE               1.054009e+00
+L3 >= 0.887727773981169TRUE:Y.dummy >= 1TRUE               .           
+Aobs:L3 >= 0.0690373829565942TRUE                          .           
+Aobs:L3 >= 0.442311989376321TRUE                           .           
+Aobs:L3 >= 0.887727773981169TRUE                           .           
+Aobs:Y.dummy >= 1TRUE                                      .           
 [1] "--------------------------------------------"
 [1] "clever weights:"
    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-  0.000   0.000   1.885   1.336   2.116   9.427 
+  0.000   0.000   1.867   1.239   1.994   4.787 
    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
- 0.1931  0.8126  0.9093  0.8690  0.9652  0.9996 
+ 0.3488  0.8997  0.9464  0.9215  0.9738  0.9999 
    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-  1.681   1.916   2.046   2.181   2.291   9.427 
+  1.681   1.887   1.962   2.015   2.065   4.787 
 [1] "--------------------------------------------"
 [1] "tmle iter = 1"
 [1] "10% done with current iterations"
@@ -579,25 +656,6 @@ Aobs:Y.dummy >= 1TRUE                                      0.1561976389620944317
 [1] "80% done with current iterations"
 [1] "90% done with current iterations"
 [1] "100% done with current iterations"
-[1] "eic equation solved at = 0.568904553134873"
-[1] "eps.Y = -0.129320345709162"
-[1] "eps.D = -0.0870769924179673"
-[1] "tmle iter = 0"
-[1] "10% done with current iterations"
-[1] "20% done with current iterations"
-[1] "30% done with current iterations"
-[1] "40% done with current iterations"
-[1] "50% done with current iterations"
-[1] "60% done with current iterations"
-[1] "70% done with current iterations"
-[1] "80% done with current iterations"
-[1] "90% done with current iterations"
-[1] "100% done with current iterations"
-[1] "eic equation solved at = 0.00714866785210015"
-Warning messages:
-1: from glmnet C++ code (error code -44); Convergence for 44th lambda value not reached after maxit=10000 iterations; solutions for larger lambdas returned 
-2: from glmnet C++ code (error code -42); Convergence for 42th lambda value not reached after maxit=10000 iterations; solutions for larger lambdas returned 
-3: from glmnet C++ code (error code -41); Convergence for 41th lambda value not reached after maxit=10000 iterations; solutions for larger lambdas returned 
-4: from glmnet C++ code (error code -38); Convergence for 38th lambda value not reached after maxit=10000 iterations; solutions for larger lambdas returned 
-5: from glmnet C++ code (error code -39); Convergence for 39th lambda value not reached after maxit=10000 iterations; solutions for larger lambdas returned
+[1] "eic equation solved at = 0.0608387633933312"
 #+end_example
+

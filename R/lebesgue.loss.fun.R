@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:13) 
 ## Version: 
-## Last-Updated: Oct 15 2024 (10:13) 
+## Last-Updated: Mar 27 2025 (18:24) 
 ##           By: Helene
-##     Update #: 1
+##     Update #: 35
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -20,6 +20,7 @@ lebesgue.loss.fun <- function(train.fit,
                               test.set,
                               X,
                               lambda.cv,
+                              time.var = "time", 
                               delta.var = "delta",
                               delta.value = 1) {
 
@@ -28,11 +29,10 @@ lebesgue.loss.fun <- function(train.fit,
     tmp[id %in% test.set, fit.lambda:=exp(predict(train.fit, X[tmp$id %in% test.set,],
                                                   newoffset=0, s=lambda.cv))]
     tmp[id %in% test.set, fit.dLambda:=fit.lambda*risk.time]
-    tmp[id %in% test.set, fit.Lambda:=cumsum(fit.dLambda), by="id"]
 
     tmp[id %in% test.set, dN:=1*ddd]
 
-    return(tmp[id %in% test.set, -sum(log(fit.lambda)*dN - fit.Lambda)])
+    return(tmp[id %in% test.set, -sum(log(fit.lambda)*dN - fit.dLambda)])
 }
 
 ######################################################################

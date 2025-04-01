@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct  2 2024 (14:47) 
 ## Version: 
-## Last-Updated: Nov 12 2024 (15:28) 
+## Last-Updated: Apr  1 2025 (07:32) 
 ##           By: Helene
-##     Update #: 100
+##     Update #: 150
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -23,11 +23,11 @@ sim.data.outer <- function(n = 200,
                            rep.true = 10,
                            get.cens.fraction = FALSE,
                            verbose = FALSE,
-                           seed = sample(1e9, 1)) {
+                           seed = NULL) {
 
     if (length(intervention.A) == 0) {
         if (!censoring) {
-            set.seed(seed)
+            if (length(seed)>0) set.seed(seed)
             out.true <- lapply(1:rep.true, function(ii) {
                 sim.data.fun(n = n, tau = tau,
                              intervention.A = intervention.A,
@@ -62,7 +62,7 @@ sim.data.outer <- function(n = 200,
                                 seed = seed))
         }
     } else {
-        set.seed(seed)
+        if (length(seed)>0) set.seed(seed)
         out.true <- lapply(1:rep.true, function(ii) {
             sim.data.fun(n = n, tau = tau,
                          intervention.A = intervention.A,
@@ -214,6 +214,8 @@ sim.data.fun <- function(n = 200,
 
         if (cens.percentage == "low") {
             alpha.C <- -0.9
+        } else if (cens.percentage == "extreme") {
+            alpha.C <- 1
         } else {
             alpha.C <- 0
         }
@@ -229,13 +231,96 @@ sim.data.fun <- function(n = 200,
     } else if (sim.setting == "3A") {
 
         if (cens.percentage == "low") {
-            alpha.C <- -2.0
+            alpha.C <- -1
         } else {
-            alpha.C <- -1.0
+            alpha.C <- -0.2
         }
+
+        betaT.k <- 0
+        betaT2.k <- 0
         
         alpha.T <- 1.1
         alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+        
+        betaC.k <- 0
+
+    } else if (sim.setting == "3Ax") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.8
+        } else {
+            alpha.C <- 0.2
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.8
+        alpha.T2 <- 0.8
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+        
+        betaC.k <- 0
+
+    } else if (sim.setting == "3A1") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.95
+        } else {
+            alpha.C <- -0.05
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.1
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+        
+        betaC.k <- 0
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+    } else if (sim.setting == "3A2") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -2.3
+        } else {
+            alpha.C <- -1.2
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.1
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+        
+        betaC.k <- 1.8
+
+    } else if (sim.setting == "4A") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.5
+        } else {
+            alpha.C <- 0.5
+        }
+
+        betaT.k <- -0.8
+        betaT.k3 <- 2.1
+        betaT2.k <- 1.4
+        alpha.T <- 2.1
+        alpha.T2 <- 0
+
+        betaC.k3 <- 1.8
+        betaC.k <- -0.8
 
     }
 
@@ -262,7 +347,7 @@ sim.data.fun <- function(n = 200,
     }
 
     ##U <- runif(n, -1, 1)
-    set.seed(seed)
+    if (length(seed)>0) set.seed(seed)
     L1 <- runif(n, -1, 1)
     U <- runif(n, -1, 1)
     L2 <- runif(n, 0, 1)
@@ -348,7 +433,7 @@ sim.data.fun <- function(n = 200,
     Tlist <- list(cbind(time=rep(0, n), delta=rep(0, n), id=1:n))
 
     #-- function to loop over for time-points: 
-    set.seed(seed+120202)
+    if (verbose) set.seed(seed+120202)
     loop.fun <- function(k, Tprev) {
 
         #-- simulate event time: 

@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:09) 
 ## Version: 
-## Last-Updated: Mar 27 2025 (18:23) 
+## Last-Updated: Nov 26 2025 (21:11) 
 ##           By: Helene
-##     Update #: 131
+##     Update #: 194
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -29,6 +29,7 @@ basis.fun <- function(pseudo.dt, ## tmp3,
                       cut.two.way = 5,
                       cut.time.treatment = NULL,
                       cut.time.covar = NULL,
+                      cut.time.time.varying.covar = NULL,
                       predict = FALSE,
                       stime = 0,
                       scovar = 0) {
@@ -36,9 +37,9 @@ basis.fun <- function(pseudo.dt, ## tmp3,
     n <- nrow(unique(pseudo.dt, by = "id"))
 
     time.varying.covars <-
-        covars[sapply(covars, function(covar) {
+        unique(c(covars[covars %in% "Y.1"], covars[sapply(covars, function(covar) {
             (nrow(pseudo.dt[, unique(get(covar)), by = "id"])>n)
-        })]
+        })]))
 
     pseudo.dt[, (covars):=lapply(.SD, function(x) {
         if (is.character(x)) {
@@ -71,17 +72,10 @@ basis.fun <- function(pseudo.dt, ## tmp3,
         hal.pseudo.dt[grid.time == 0, (time.var):=0]
 
         hal.pseudo.dt[, risk.time := diff(c(get(time.var), final.time[.N])), by = "id"]
-
-        if (FALSE) {
-            hal.pseudo.dt[id == 3, c("time", "grid.time", "risk.time", "Y.dummy", "ddd")] #, "test.risk.time"
-            hal.pseudo.dt[id == 3, sum(ddd)]
-            dt1[id == 3, sum(delta == 1)]
-        }
-        
     }
 
     options(na.action="na.pass")
-
+  
     X <- Matrix(
         model.matrix(formula(paste0(
             delta.var, "~-1",
@@ -96,7 +90,10 @@ basis.fun <- function(pseudo.dt, ## tmp3,
             ifelse(length(covars)>0 & cut.one.way>2,
                    paste0("+", paste0(sapply(covars, function(covar) paste0(indicator.basis.fun(hal.pseudo.dt, covar, cut.one.way), collapse="+")), collapse="+")),
                    ""),
-            ifelse(length(time.varying.covars)>0 & cut.time.varying>2,
+            ifelse(length(time.var)>0 & cut.time.time.varying.covar>0 & length(time.varying.covars)>0 & cut.time.varying >= 1,
+                   paste0("+", paste0(sapply(
+                                   time.varying.covars, function(covar) paste0(paste0(indicator.basis.fun(hal.pseudo.dt, "grid.time", cut.time.time.varying.covar), ":", indicator.basis.fun(pseudo.dt, covar, cut.time.varying, xgrid=Y.time.grid, delta.var = delta.var), "+"), collapse="")), collapse="+"), ""), ""),
+            ifelse(length(time.varying.covars)>0 & cut.time.varying >= 1,
                    paste0("+", paste0(sapply(time.varying.covars, function(covar) {
                        paste0(paste0(ifelse(covar == "Y.time" & TRUE, "(Y.dummy>=1):", ""), indicator.basis.fun(pseudo.dt, covar, cut.time.varying, xgrid=Y.time.grid, delta.var = delta.var)), collapse="+")
                    }), collapse="+")),
@@ -145,8 +142,8 @@ basis.fun <- function(pseudo.dt, ## tmp3,
                        } else return("")
                    }), collapse=""), "")
         )), 
-        data=hal.pseudo.dt), sparse=FALSE)
-
+        data=hal.pseudo.dt), sparse=TRUE) #
+ 
     if (length(grep("Y.dummy >= 1FALSE:Y.time", colnames(X))) > 0) {
         remove.X <- grep("Y.dummy >= 1FALSE:Y.time", colnames(X))
         X <- X[, -remove.X]
@@ -154,7 +151,14 @@ basis.fun <- function(pseudo.dt, ## tmp3,
     
     if (length(time.var)>0) {
         if (!predict) {
-            x.vector <- apply(X, 1, function(x) paste0(x, collapse=","))
+            ##x.vector <- apply(X, 1, function(x) paste0(x, collapse=","))
+            #browser()
+            #profvis::profvis({
+            #    x.vector <- apply(X, 1, paste, collapse = "")
+            #})
+            #profvis::profvis({
+            x.vector <- hash_sparse_rows_dgC(X)
+            #})
             hal.pseudo.dt[, x:=x.vector]
         }
         return(list(X=X, hal.pseudo.dt=hal.pseudo.dt))
@@ -165,7 +169,9 @@ basis.fun <- function(pseudo.dt, ## tmp3,
 indicator.basis.fun <- function(pseudo.dt, xvar, xcut, xgrid=NULL, type="obs", return.grid=FALSE, delta.var=NULL) {
     if (length(xgrid)>0 & xvar == "Y.time") {
     } else if (type=="obs") {
-        if (xvar == "Y.1") { # fix to remove heavy tail: 
+        if (xvar == "Y.dummy") {
+            xvar.values <- 1
+        } else if (xvar == "Y.1") {
             xvar.values <- 1:xcut
         } else if (FALSE & xvar == "Y.time") { # 
             xvar.values <- pseudo.dt[before.tau == 1 & get(delta.var) == 1 & Y.dummy >= 1, sort(get(xvar))]
@@ -173,7 +179,11 @@ indicator.basis.fun <- function(pseudo.dt, xvar, xcut, xgrid=NULL, type="obs", r
             xvar.values <- pseudo.dt[before.tau == 1, sort(unique(get(xvar)))]
         }
         xvar.pick <- floor(seq(1, length(xvar.values), length=min(xcut, length(xvar.values))))
-        xgrid <- xvar.values[xvar.pick][-c(1,xcut)]
+        if (xvar != "Y.1" & xvar != "Y.dummy") {
+            xgrid <- xvar.values[xvar.pick][-c(1,xcut)]
+        } else {
+            xgrid <- xvar.values#[xvar.pick][-c(xcut)] 
+        }
     } else {
         xgrid <- round(seq(pseudo.dt[before.tau == 1, min(get(xvar))],
                            pseudo.dt[before.tau == 1, max(get(xvar))],
@@ -184,6 +194,51 @@ indicator.basis.fun <- function(pseudo.dt, xvar, xcut, xgrid=NULL, type="obs", r
     } else {
         return(paste0("(", xvar, ">=", unique(xgrid), ")"))
     }
+}
+
+library(digest)
+
+hash_sparse_rows_dgC <- function(M) {
+    stopifnot(inherits(M, "dgCMatrix"))
+
+    p  <- M@p
+    i  <- M@i
+    x  <- M@x
+    nr <- M@Dim[1]
+
+    # storage: list of integer/values per row
+    idx_list <- vector("list", nr)
+    val_list <- vector("list", nr)
+
+    # loop over columns, add entries to each row
+    for (col in seq_len(M@Dim[2])) {
+        start <- p[col] + 1
+        end   <- p[col + 1]
+
+        if (end >= start) {
+            rows <- i[start:end] + 1        # row indices (1-based)
+            vals <- x[start:end]            # values
+
+            # append col index + value to each row's list
+            for (k in seq_along(rows)) {
+                r <- rows[k]
+                idx_list[[r]] <- c(idx_list[[r]], col)
+                val_list[[r]] <- c(val_list[[r]], vals[k])
+            }
+        }
+    }
+
+    # hash each row using only the sparse pattern
+    out <- character(nr)
+    for (r in seq_len(nr)) {
+        out[r] <- digest::digest(
+                              list(idx_list[[r]], val_list[[r]]),
+                              algo = "xxhash64",
+                              serialize = TRUE
+                          )
+    }
+
+  out
 }
 
 ######################################################################

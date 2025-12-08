@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:12) 
 ## Version: 
-## Last-Updated: Mar 20 2025 (09:54) 
+## Last-Updated: Dec  7 2025 (20:09) 
 ##           By: Helene
-##     Update #: 16
+##     Update #: 43
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -24,6 +24,7 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
                    penalty.factor = rep(1, ncol(X)),
                    delta.var = "delta",
                    delta.value = 1,
+                   parallelize.cve = 1,
                    verbose = FALSE,
                    browse = FALSE, 
                    lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj)))) {
@@ -37,18 +38,30 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
     cv <- sample(rep(1:V, length = n), size = n)
     cv.split <- lapply(1:V, function(vv) (1:n)[cv == vv])
 
-    cve.list <- lapply(1:V, function(vv) {
+    id_index <- split(seq_len(nrow(hal.pseudo.dt)), hal.pseudo.dt$id)
+
+    cve.list <- parallel::mclapply(
+                              X = 1:V,
+                              mc.cores = min(detectCores()-1, parallelize.cve),
+                              FUN = function(vv) {
+
+    #cve.list <- lapply(1:V, function(vv) {
 
         test.set <- cv.split[[vv]]
-        train.set <- hal.pseudo.dt[, id][!hal.pseudo.dt[, id] %in% test.set]
+        train.set <- hal.pseudo.dt[, id][!(hal.pseudo.dt[, id] %in% test.set)]
         dt.train <- hal.pseudo.dt[id %in% train.set]
 
         dt.train[, D:=sum(ddd), by="x"]
         dt.train[, RT:=sum(risk.time), by="x"]
-
+                                  
         tmp.dt <- unique(dt.train[, c("x", "D", "RT")])
         Y.train <- tmp.dt[RT>0, D]
         offset.train <- tmp.dt[RT>0, log(RT)]
+
+        #train_idx <- unlist(id_index[as.character(train.set)], use.names = FALSE)
+        #X_sub <- X[train_idx, , drop = FALSE]
+        #X_sub <- unique.matrix(X_sub)
+        #X.train <- X_sub[tmp.dt$RT > 0, , drop = FALSE]
         X.train <- unique.matrix(X[hal.pseudo.dt$id %in% train.set,])[tmp.dt$RT>0,]
 
         if (length(lambda.cvs)>0) {
@@ -90,9 +103,20 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
         
     })
 
-    cve <- unlist(lapply(1:length(lambda.cvs), function(mm) {
-        sum(unlist(lapply(cve.list, function(out) out[[mm]])))
-    }))
+    test.error <- try(cve <- unlist(lapply(1:length(lambda.cvs), function(mm) {
+        sum(unlist(lapply(cve.list, function(out) {
+            if (is.numeric(out)) {
+                return(out[[mm]])
+            } else {
+                return(0)
+            }
+        })))
+    })))
+
+    if (!is.numeric(test.error)) {
+        message("Error in CV step")
+        cve <- 0
+    }
     
     lambda.cv <- min(lambda.cvs[cve==min(cve)])
     

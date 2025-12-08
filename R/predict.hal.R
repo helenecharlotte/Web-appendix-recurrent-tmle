@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (09:34) 
 ## Version: 
-## Last-Updated: Mar 27 2025 (18:30) 
+## Last-Updated: Dec  5 2025 (20:15) 
 ##           By: Helene
-##     Update #: 18
+##     Update #: 260
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -17,27 +17,13 @@
 
 predict.hal <- function(seed = NULL, #13349,
                         fit.hals, ## output from fit.hal
-                        pseudo.dt, ## tmp3,
+                        pseudo.dt, ## tmp.hal,
                         delta.var = "delta",
-                        delta.value = 1,
                         time.var = "time",
-                        covars,
                         treatment = "Aobs", ## the *observed* treatment variable
                         treatment.prediction = "A", ## the *counterfactual* treatment variable
-                        cut.one.way = 10,
-                        cut.time.varying = 5,
-                        Y.time.grid = NULL,
-                        cut.time = 15,
-                        two.way = cbind(var1="", var2=""),
-                        cut.two.way = 5,
-                        cut.time.treatment = NULL,
-                        cut.time.covar = NULL,
-                        stime = 0,
-                        scovar = 0,
-                        cv.glmnet = FALSE,
-                        V = 5,
-                        lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
-                        verbose = FALSE,
+                        parallelize.predict = 1,
+                        verbose = FALSE, verbose2 = FALSE,
                         browse0 = FALSE,
                         browse1 = FALSE,
                         browse2 = FALSE,
@@ -51,14 +37,36 @@ predict.hal <- function(seed = NULL, #13349,
     #--------------------------------
     #--- detect dependence on recurrent event process;
 
-    # - following should incorporate interactions ----------
-
     history.Y <- depend.Y <- depend.Y.all <- unique(unlist(lapply(fit.hals, function(fit.hal) {
         indicator.names <- coef(fit.hal[["hal.fit"]], s=fit.hal[["lambda.cv"]])@Dimnames[[1]]
         nonzero.vars <- coef(fit.hal[["hal.fit"]], s=fit.hal[["lambda.cv"]])@i
         return(indicator.names[nonzero.vars+1][(substr(indicator.names[nonzero.vars+1], 1, 1) == "Y") |
                                                (indicator.names[nonzero.vars+1] %in% grep(":Y", indicator.names[nonzero.vars+1], value = TRUE))])
     })))
+
+    history.main.Y <- unique(c(history.Y[history.Y %in% grep("Y.1", history.Y[!(history.Y %in% grep(":", history.Y, value = TRUE))], value = TRUE)],
+                               sapply(strsplit(history.Y, ":"), function(vvar) {
+                                   vvar[substr(vvar, 1, 1) == "Y"]
+                               })))
+
+    if (verbose2) {
+        print("--------------------------------------------")
+        print(history.main.Y)
+    }
+    # history.Y[!history.Y%in%grep(":", history.Y, value = TRUE)]
+    if (length(depend.Y)>0) {
+        max.Y <- max(as.numeric(gsub("Y.1 >= ", "", gsub("TRUE|FALSE", "", history.main.Y))))
+        history.Y <- depend.Y <- depend.Y.all <- c(paste0("Y.1 >= ", 1:max.Y, "TRUE"),
+                                                   history.Y[history.Y%in%grep(":", history.Y, value = TRUE)])
+    } else{
+        max.Y <- 1
+    }
+    
+    if (verbose2) {
+        print("--------------------------------------------")
+        print(history.Y)
+        print("--------------------------------------------")
+    }
     
     if (length(depend.Y)>0) {
         
@@ -113,89 +121,93 @@ predict.hal <- function(seed = NULL, #13349,
     #--------------------------------
     #--- prediction part;
 
-    X.hal.a <- basis.fun(pseudo.dt = copy(pseudo.dt)[pseudo.dt[["observed.Y"]] == 1][, (treatment) := get(treatment.prediction)],
-                         delta.var = delta.var,
-                         delta.value = delta.value,
-                         covars = covars,
-                         treatment = treatment,
-                         cut.one.way = cut.one.way,
-                         cut.time.varying = cut.time.varying,
-                         Y.time.grid = Y.time.grid,
-                         cut.time = cut.time,
-                         two.way = two.way,
-                         cut.two.way = cut.two.way,
-                         cut.time.treatment = cut.time.treatment,
-                         cut.time.covar = cut.time.covar,
-                         stime = stime,
-                         scovar = scovar,
-                         predict = TRUE)
-
+ 
     if (browse1) browser()
-    
-    X.hal.a <- X.hal.a$X
 
-    if (length(history.Y)>0) {
+    by.vars1 <- c("id", treatment.prediction)
+    by.vars2 <- c("id", "observed.Y", treatment.prediction)
 
-        # --- NB - should think interactions into this?
+    hal.vars.list <- lapply(1:length(fit.hals), function(kk) {
+        fit.hals[[kk]][["hal.fit"]]$beta@Dimnames[[1]]
+    })
 
-        pseudo.dt <- do.call("rbind", lapply(1:nrow(history.Y), function(ii) {
-            pseudo.ii <- copy(pseudo.dt)[pseudo.dt[["observed.Y"]] == 1][, (treatment) := get(treatment.prediction)][, which.Y := ii]
-            for (jj in 1:ncol(history.Y)) {
-                for (yvar in depend.Y.list[[jj]]) {
-                    if (yvar == colnames(history.Y)[jj]) {
-                        pseudo.ii[, (yvar) := history.Y[ii,jj]]
-                    } else { #--- this to handle interactions
-                        pseudo.ii[, (yvar) := history.Y[ii,jj]*X.hal.a[, strsplit(yvar, ":")[[1]][substr(strsplit(yvar, ":")[[1]], 1, 1) != "Y"]]]
-                    }
-                }
-            }
-            return(pseudo.ii)
-        }))
+    hal.vars <- unique(c(unlist(hal.vars.list)))
 
-        X.hal.a <- do.call("rbind", lapply(1:nrow(history.Y), function(ii) {
-            X.ii <- copy(X.hal.a)
-            observed.Y <- rep(1, length = nrow(X.hal.a))
-            for (jj in 1:ncol(history.Y)) {
-                observed.Y <- observed.Y*(X.ii[, colnames(history.Y)[jj]] == history.Y[ii,jj])
-                for (yvar in depend.Y.list[[jj]]) {
-                    if (yvar == colnames(history.Y)[jj]) {
-                        X.ii[, yvar] <- history.Y[ii,jj]
-                    } else {
-                        X.ii[, yvar] <- history.Y[ii,jj]*X.ii[, strsplit(yvar, ":")[[1]][substr(strsplit(yvar, ":")[[1]], 1, 1) != "Y"]]
-                    }
-                }
-            }
-            return(cbind(X.ii, observed.Y))
-        }))
+    hal.vars.static <- sapply(hal.vars[!(hal.vars %in% grep("Y.|:Y", hal.vars, value = TRUE))],
+                              function(xstatic) paste0("(", gsub(":", "):(", xstatic), ")"))
+    hal.vars.dynamic <- sapply(hal.vars[hal.vars %in% grep("Y.|:Y", hal.vars, value = TRUE)],
+                               function(xstatic) paste0("(", gsub(":", "):(", xstatic), ")"))
 
-        pseudo.dt[, observed.Y := X.hal.a[, "observed.Y"]]
+    X.hal.static <- Matrix(
+        model.matrix(formula(paste0(delta.var, "~-1+", paste(gsub("FALSE|TRUE", "", hal.vars.static),
+                                                             collapse = "+"))), 
+                     data=pseudo.dt[,
+                     (treatment) := get(treatment.prediction)]), sparse=TRUE) 
 
-        X.hal.a <- X.hal.a[, colnames(X.hal.a) != "observed.Y"]
-        
-        by.vars1 <- c("id", colnames(history.Y), treatment.prediction)
-        by.vars2 <- c("id", "observed.Y", treatment.prediction)
+    ## pseudo.dt[, risk.time := diff(c(get(time.var), max.time[.N])), by = by.vars1]
 
-    } else {
-        by.vars1 <- by.vars2 <- c("id", treatment.prediction)
-    }
-
-    pseudo.dt[, risk.time := diff(c(0,get(time.var))), by = by.vars1]
-    
     if (browse2) browser()
-    
-    for (kk in 1:length(fit.hals)) {
-        
-        delta.value <- fit.hals[[kk]][["delta.value"]]
-        
-        pseudo.dt[, (paste0("fit.lambda", delta.value)) := exp(predict(fit.hals[[kk]][["hal.fit"]], X.hal.a,
-                                              newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
-        pseudo.dt[, (paste0("fit.dLambda", delta.value)) := get(paste0("fit.lambda", delta.value))*risk.time]
-        pseudo.dt[, (paste0("fit.Lambda", delta.value)) := cumsum(get(paste0("fit.dLambda", delta.value))), by = by.vars2]
 
-        pseudo.dt[, (paste0("P", delta.value)) := get(paste0("fit.dLambda", delta.value))]
-        pseudo.dt[, (paste0("surv", delta.value)) := exp(-get(paste0("fit.Lambda", delta.value)))]
-        pseudo.dt[, (paste0("surv", delta.value, ".1")) := get(paste0("surv", delta.value)), by = "id"]
+    if (length(history.Y) == 0) {
+        history.Y <- matrix(c(0), nrow = 1)
     }
+    
+    for (ii in 1:nrow(history.Y)) {
+        pseudo.dt[Y.1 == rowSums(history.Y)[ii], which.Y := ii]
+    }
+        
+    pseudo.dt <- cbind(pseudo.dt,
+                       do.call("cbind",
+                               mclapply(
+                                   X = 1:nrow(history.Y),
+                                   mc.cores = min(detectCores()-1, parallelize.predict),#parallelize.cve
+                                   FUN = function(ii) {
+
+                                       pseudo.ii <- copy(pseudo.dt)[,
+                                           (treatment) := get(treatment.prediction)][, which.Y := ii][, Y.1 := rowSums(history.Y)[ii]]
+
+                                       if (length(hal.vars.dynamic)>0) {
+                                           X.ii <- cbind(X.hal.static, Matrix(
+                                                                           model.matrix(formula(paste0(delta.var, "~-1+", paste(gsub("FALSE|TRUE", "", hal.vars.dynamic), collapse = "+"))), 
+                                                                                        data=pseudo.ii), sparse=TRUE))
+                                       } else {
+                                           X.ii <- X.hal.static
+                                       }
+
+                                       colnames.missing <- colnames(X.ii)[!colnames(X.ii) %in% hal.vars]
+
+                                       colnames(X.ii)[colnames(X.ii) %in% colnames.missing] <- sub(
+                                           "^([^:]+):([^:]+)$",
+                                           "\\2:\\1",
+                                           colnames(X.ii)[colnames(X.ii) %in% colnames.missing]
+                                       )
+               
+                                       out.vars <- rep(NA, length(fit.hals))
+
+                                       if (browse3) browser()
+
+                                       for (kk in 1:length(fit.hals)) {
+        
+                                           delta.value <- fit.hals[[kk]][["delta.value"]]
+        
+                                           pseudo.ii[, (paste0("fit.lambda", delta.value)) := exp(predict(fit.hals[[kk]][["hal.fit"]], X.ii[, hal.vars.list[[kk]]],
+                                                                                                          newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
+                                           pseudo.ii[, (paste0("fit.dLambda", delta.value)) := get(paste0("fit.lambda", delta.value))*risk.time]
+                                           pseudo.ii[, (paste0("fit.Lambda", delta.value)) := cumsum(get(paste0("fit.dLambda", delta.value))), by = by.vars2]
+
+                                           pseudo.ii[, (paste0("P", delta.value)) := get(paste0("fit.dLambda", delta.value))]
+                                           pseudo.ii[, (paste0("surv", delta.value)) := exp(-get(paste0("fit.Lambda", delta.value)))]
+                                           pseudo.ii[, (paste0("surv", delta.value, ".1")) := get(paste0("surv", delta.value)), by = "id"]
+
+                                           setnames(pseudo.ii, paste0("P", delta.value), paste0("P", delta.value, ".Y", ii))
+
+                                           out.vars[kk] <- paste0("P", delta.value, ".Y", ii)
+                                       }
+
+                                       return(pseudo.ii[, out.vars, with = FALSE])
+                                   })))
+
+    if (browse2) browser()
 
     return(pseudo.dt)
 }

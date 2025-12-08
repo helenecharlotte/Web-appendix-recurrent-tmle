@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Apr  1 2025 (13:26) 
+## Last-Updated: Dec  7 2025 (19:43) 
 ##           By: Helene
-##     Update #: 509
+##     Update #: 1273
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -26,34 +26,37 @@ tmle.est.fun <- function(dt,
                                           fit = "cox"),
                          fit.treatment = list(model = "A~L1+L2+L3",
                                               fit = "glm"),
-                         verbose = FALSE,
+                         use.exponential = FALSE,
+                         verbose = FALSE, verbose2 = FALSE,
                          browse.hal = FALSE,
-                         browse2 = FALSE, 
+                         browse2 = FALSE,
+                         browse3 = FALSE,
                          #--- simpler estimators: 
                          baseline.tmle = FALSE,
                          naive.gcomp = FALSE, 
                          standard.np = FALSE,
-                         max.iter = FALSE,
+                         max.iter = 100,
                          #--- HAL parameters:
                          lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
+                         min.no.of.ones = 0.05,
                          cut.one.way = 15,
                          cut.time.varying = 5,
-                         Y.time.grid = NULL,
                          cut.time = 35,
-                         two.way = cbind(var1="", var2=""),
                          cut.two.way = 5,
-                         cut.time.treatment = 0,
-                         cut.time.covar = 0,
                          penalize.time = FALSE,
-                         reduce.seed.dependence = FALSE, 
-                         stime = 0,
-                         scovar = 0,
+                         reduce.seed.dependence = FALSE,
+                         parallelize.Z = 1,
+                         parallelize.cve = parallelize.Z,
+                         parallelize.predict = parallelize.Z,
                          tmle.criterion = 1,
                          V = 10, 
                          cv.glmnet = FALSE,
                          seed.hal = NULL,
-                         output.lambda.cvs = FALSE
+                         output.lambda.cvs = FALSE,
+                         return.eic = FALSE
                          ) {
+
+    dt <- copy(dt)
 
     n <- length(unique(dt[["id"]]))
 
@@ -80,25 +83,35 @@ tmle.est.fun <- function(dt,
         strsplit(strsplit(fit.type, "~")[[1]][2], "\\+|\\*")[[1]]
     })))
 
+    if (length(interaction.names <- grep(":", varnames, value = TRUE))>0) {
+        varnames <- unique(c(varnames[!varnames %in% interaction.names],
+                             str_split(interaction.names, ":")[[1]]))
+    }
+
     if ("Y.dummy." %in% substr(varnames,1,nchar("Y.dummy."))) {
         Y.dummy.max <- max(as.numeric(gsub("Y.dummy.", "", varnames[substr(varnames,1,nchar("Y.dummy.")) == "Y.dummy."])))
     } else {
-        Y.dummy.max <- NULL
+        if ("Y.dummy" %in% substr(varnames,1,nchar("Y.dummy"))) {
+            Y.dummy.max <- 1
+            print(Y.dummy.max)
+        } else {
+            Y.dummy.max <- NULL
+        }
     }
 
     varnames <- varnames[varnames != "1"]
     varnames <- varnames[!(varnames %in% grep(">=", varnames, value = TRUE))]
 
     #-- name of treatment variable: 
-    Aname <- strsplit(fit.treatment[["model"]], "~")[[1]][1] 
-   
+    Aname <- strsplit(fit.treatment[["model"]], "~")[[1]][1]
+  
     if (typeof(dt[["time"]]) != "double") {
         warning("NB: the time variable is not numeric - will be converted")
-        dt[["time"]] <- as.numeric(dt[["time"]])
+        dt[, time := as.numeric(time)]
     }
 
     if ("L1" %in% names(dt)) dt[, L1.squared := L1^2]
-    
+
     dt[, tstart := c(0, time[-.N]), by = "id"]
     dt[, tstop := time]
 
@@ -339,10 +352,13 @@ tmle.est.fun <- function(dt,
     if (any(any.hal)) {
 
         covars <- varnames[varnames != Aname]
+        
         if (length(grep("\\.squared", covars))>0) {
             covars <- covars[!(covars %in% grep("\\.squared", covars, value = TRUE))]
         }
 
+        if ("Y.dummy" %in% covars) covars[covars == "Y.dummy"] <- "Y.1"
+        
         #-- interactions: 
         if (cut.two.way > 0) {
             time.varying.covars <-
@@ -356,34 +372,177 @@ tmle.est.fun <- function(dt,
 
         tmp.hal <- copy(tmp3)[, observed.Y := 1]
 
-        #-- fit HAL: 
+        #-- fit HAL:
+
+        tmp.hal <- copy(tmp.hal)
+
+        tmp.hal[, tstart := c(0, time[-.N]), by = "id"]
+        tmp.hal[, final.time := max(time.obs), by = "id"]
+
+        time.varying.covars <- covars[covars %in% "Y.1"]
+        baseline.covars <- covars[!covars %in% "Y.1"]
+
+        tmp.hal[, (baseline.covars):=lapply(.SD, function(x) {
+            if (is.character(x)) {
+                return(as.numeric(as.factor(x)))
+            } else if (!is.numeric(x)) {
+                return(as.numeric(x))
+            } else return(x)
+        }), .SDcols=baseline.covars]
+
+        grid.times <- unique.times[floor(seq(1, length(unique.times), length=cut.time+1))[-(cut.time+1)]]
+
+        grid.covars <- lapply(baseline.covars, function(covar) {
+            sort(unique(tmp.hal[idN == 1, covar, with = FALSE][floor(seq(1, n, length=cut.one.way))])[[1]])
+        })
+        names(grid.covars) <- baseline.covars
+     
+        tmp.hal[, grid.period:=as.numeric(cut(tstart, c(0, grid.times, Inf), include.lowest=TRUE, right=FALSE))]
+        tmp.hal[, grid.time:=c(0, grid.times, Inf)[grid.period]]
+
+        by.vars <- c("id", "grid.period")
+        if (length(time.varying.covars)>0) by.vars <- c(by.vars, time.varying.covars)
+
+        for (delta.value in c(1,2,0)[any.hal]) {
+            if (delta.value == 0) {
+                tmp.hal[, (paste0("ddd.", delta.value)) := sum(time==final.time & delta==delta.value), by = by.vars]
+            } else {
+                tmp.hal[, (paste0("ddd.", delta.value)) := sum((time<=final.time)*(delta==delta.value)), by = by.vars]
+            }
+
+            ## tmp.hal[, risk.time := sum(time - tstart), by = by.vars]
+            tmp.hal[time <= final.time, risk.time := sum(time - tstart), by = by.vars]
+        }
+
+        tmp.hal.reduced <- unique(tmp.hal[time<=final.time], by=by.vars)
+
+        ## tmp.hal.reduced[grid.time == 0, time:=0]
+        ## tmp.hal.reduced[, risk.time := diff(c(time, final.time[.N])), by = "id"]
+
+        hal.formula.main <- paste0("delta ~ -1 + Aobs + ",
+                                   paste0("(grid.time >=", grid.times, ")", collapse = "+"),
+                                   " + ", paste0(sapply(baseline.covars, function(covar)
+                                       paste0("(", covar, ">=", grid.covars[[covar]], ")", collapse = "+")), collapse = "+"),
+                                   ifelse(length(time.varying.covars)>0, paste0(" + ", sapply(time.varying.covars, function(covar)
+                                       paste0("(", covar, ">=", 1:cut.time.varying, ")", collapse = "+"))), ""))
+
+        if (!(cut.two.way == 0)) {
+                       
+            screening.covars.interaction <- lapply(1:length(grid.covars), function(cc) paste0("(", names(grid.covars)[cc], " >= ", min(grid.covars[[cc]][grid.covars[[cc]] >= median(grid.covars[[cc]])]), ")"))
+            screening.times.interaction <- paste0("(grid.time >= ", median(grid.times), ")")
+
+            screening.two.way <- do.call("rbind", combn(c(screening.covars.interaction,
+                                                          screening.times.interaction,
+                                                          "Aobs",
+                                                          "(Y.1>= 1)"), 2, simplify = FALSE))
+
+            hal.formula.main.without.two.way <- hal.formula.main
+
+            hal.formula.main <- paste0(hal.formula.main,
+                                       " + ", paste0(screening.two.way[,1], ":", screening.two.way[,2], collapse = "+"))
+        }
+
+        X <- Matrix(
+            model.matrix(formula(hal.formula.main),
+                         data = tmp.hal.reduced), sparse = TRUE)
+        
+        col_ones <- Matrix::colMeans(X != 0)
+        X <- X[, col_ones >= min.no.of.ones]
+        
+        x.vector <- hash_sparse_rows_dgC(X)
+        tmp.hal.reduced[, x:=x.vector]
+
+        if (browse.hal) browser()
 
         fit.hals <- lapply(c(1,2,0)[any.hal], function(delta.value) {
-            fit.hal(
-                pseudo.dt = tmp.hal,
+
+            message("---------------------------------------------------------------------------------------")
+            print(delta.value)
+            message("---------------------------------------------------------------------------------------")
+            
+            first.hal <- fit.hal(
+                hal.pseudo.dt = tmp.hal.reduced, 
+                X.hal = X, 
                 delta.var = "delta",
                 delta.value = delta.value,
                 time.var = "time",
-                covars = covars,
                 treatment = "Aobs",
-                treatment.prediction = Aname,
                 lambda.cvs = lambda.cvs,
-                cut.one.way = cut.one.way,
-                cut.time.varying = cut.time.varying,
-                Y.time.grid = Y.time.grid,
-                cut.time = cut.time,
-                two.way = two.way,
-                cut.two.way = cut.two.way,
-                cut.time.treatment = cut.time.treatment,
-                cut.time.covar = cut.time.covar,
-                penalize.time = penalize.time,
-                stime = stime,
-                scovar = scovar,
+                penalize.time = !(cut.two.way == 0),
+                penalize.treatment = !(cut.two.way == 0),
                 reduce.seed.dependence = reduce.seed.dependence,
                 V = V,
+                parallelize.cve = parallelize.cve,
                 cv.glmnet = cv.glmnet,
                 verbose = verbose,
                 seed = seed.hal)
+
+            if (cut.two.way == 0) {
+
+                return(first.hal)
+
+            } else {
+
+                indicator.names <- coef(first.hal[["hal.fit"]], s=first.hal[["lambda.cv"]])@Dimnames[[1]]
+                nonzero.vars <- coef(first.hal[["hal.fit"]], s=first.hal[["lambda.cv"]])@i
+                nonzero.coefs <- coef(first.hal[["hal.fit"]], s=first.hal[["lambda.cv"]])@x
+                selected.bases <- indicator.names[nonzero.vars+1]
+                selected.bases <- selected.bases[rev(order(abs(nonzero.coefs)))][1:min(length(selected.bases), 50)]
+                selected.bases <- selected.bases[!selected.bases %in% "(Intercept)" &
+                                                 !selected.bases %in% grep("FALSE", selected.bases, value = TRUE)]
+                selected.bases <- gsub("TRUE", "", selected.bases)
+
+                two.way <- lapply(str_split(selected.two.way.bases <- grep(":", selected.bases, value = TRUE), ":"),
+                       function(str_interaction) {
+                           c(str_split(str_interaction[1], " >= ")[[1]][1],
+                             str_split(str_interaction[2], " >= ")[[1]][1])
+                       })
+
+                selected.one.way.bases <- selected.bases[!selected.bases %in% selected.two.way.bases]
+
+                if (length(two.way)>0) {
+                    two.way <- do.call("rbind", lapply(two.way, function(two.ways) {
+                        if (length(grep(two.ways[1], selected.one.way.bases))>0 & length(grep(two.ways[2], selected.one.way.bases))>0)  
+                            do.call("rbind", lapply(grep(two.ways[1], selected.one.way.bases, value = TRUE),
+                                                    function(var1) 
+                                                        cbind(var1, grep(two.ways[2], selected.one.way.bases, value = TRUE))))
+                    }))
+                }
+
+                if (length(two.way)>0) {
+                    two.way.bases <- unique(c(
+                        paste0("(", gsub(":", "):(", selected.two.way.bases), ")"),
+                        apply(two.way, 1,
+                              function(row) paste0("(", row[1], "):(", row[2], ")"))))
+                }
+                
+                hal.formula.two.way <-
+                    paste0(hal.formula.main.without.two.way,
+                           ifelse(length(two.way)>0, paste0(" + ", paste0(two.way.bases, collapse = "+")), ""))
+
+                X.two.way <- Matrix(
+                    model.matrix(formula(hal.formula.two.way),
+                                 data = tmp.hal.reduced), sparse = TRUE)
+            
+                col_ones <- Matrix::colMeans(X.two.way != 0)
+                X.two.way <- X.two.way[, col_ones >= min.no.of.ones]
+
+                return(fit.hal(
+                    hal.pseudo.dt = tmp.hal.reduced, 
+                    X.hal = X.two.way, 
+                    delta.var = "delta",
+                    delta.value = delta.value,
+                    time.var = "time",
+                    treatment = "Aobs",
+                    lambda.cvs = lambda.cvs,
+                    penalize.time = penalize.time,
+                    reduce.seed.dependence = reduce.seed.dependence,
+                    V = V,
+                    parallelize.cve = parallelize.cve,
+                    cv.glmnet = cv.glmnet,
+                    verbose = verbose,
+                    seed = seed.hal))
+            }
         })
 
 
@@ -406,40 +565,29 @@ tmle.est.fun <- function(dt,
                 return(coefs)
             })
         }
-        
-        #-- predict in expanded data: 
+
+        if (browse.hal) browser()
+
+        tmp.hal[, risk.time := time-tstart]
+
         tmp.hal <- predict.hal(
             fit.hals = fit.hals,
             pseudo.dt = tmp.hal,
             delta.var = "delta",
             time.var = "time",
-            covars = covars,
             treatment = "Aobs",
             treatment.prediction = Aname,
-            cut.one.way = cut.one.way,
-            cut.time.varying = cut.time.varying,
-            Y.time.grid = Y.time.grid,
-            cut.time = cut.time,
-            two.way = two.way,
-            cut.two.way = cut.two.way,
-            cut.time.treatment = cut.time.treatment,
-            cut.time.covar = cut.time.covar,
-            stime = stime,
-            scovar = scovar,
+            parallelize.predict = parallelize.predict,
             verbose = verbose,
+            verbose2 = verbose2,
             seed = seed.hal)
-
-        if (browse.hal) browser()
-
     }
 
     #--------------------------------    
-    #-- prediction part is over, so remove data after tau:
-    #-- NB CHECK
+    #-- prediction part is over
     
     tmp3 <- tmp3[time <= tau]
     if (any(any.hal)) tmp.hal <- tmp.hal[time <= tau]
-    unique.times <- unique.times[unique.times <= tau]
     
     #--------------------------------    
     #-- to handle dependence on jump in the past:
@@ -513,7 +661,7 @@ tmle.est.fun <- function(dt,
 
         if (baseline.tmle) { #-- for the simple baseline version of tmle: 
             
-            if ("Y.dummy >= 1TRUE" %in% names(tmp.hal) | "Y.1 >= 1TRUE" %in% names(tmp.hal)) {
+            if ("P1.Y" %in% substr(names(tmp.hal), 1, 4) | "Y.dummy >= 1TRUE" %in% names(tmp.hal) | "Y.1 >= 1TRUE" %in% names(tmp.hal)) {
                 print("NB: do not use time-dependent variables with the baseline tmle")
             }
 
@@ -525,97 +673,28 @@ tmle.est.fun <- function(dt,
 
         } else { #-- for the general version of tmle:
 
-            #-- NB: when using HAL, we here go from long to wide format
-            #-- NB: remember that there is a faster version which works with "Y.dummy" dependence alone
-
-            if (length(tmp.hal[["Y.dummy >= 1TRUE"]])>0) {
-                tmp.hal[["Y.dummy"]] <- tmp.hal[["Y.dummy >= 1TRUE"]]
-            }
-
-            Y.dummy.vars <- grep(">=", names(tmp.hal)[substr(names(tmp.hal), 1, 3)  %in% c("Y.d", "Y.1")], value = TRUE)
-
-            if (length(grep("Y.1", Y.dummy.vars))>0) {
-                
-                Y.dummy.max <- max(as.numeric(gsub("TRUE|Y.1 >= ", "", grep("Y.1", Y.dummy.vars, value = TRUE))))
-
-                index.value <- as.numeric(gsub("Y.dummy >= |Y.1 >= |TRUE", "", Y.dummy.vars))
-                
-                tmp3[, Y.dummy.index := findInterval(Y.1, 0:Y.dummy.max)]
-                
-                index.j <- 1:(Y.dummy.max+1)
-                index.j1 <- sapply(index.j+1, function(ij) min(ij, max(as.numeric(index.j))))
-
-                for (kY in index.j) {
-
-                    kY.vector <- apply(cbind(
-                        do.call("cbind", lapply((1:length(index.value))[index.value %in% index.j[index.j<kY]], function(kY.below) {
-                            tmp.hal[[Y.dummy.vars[kY.below]]] == 1
-                        })),
-                        do.call("cbind", lapply((1:length(index.value))[index.value %in% index.j[index.j >= kY]], function(kY.above) {
-                            tmp.hal[[Y.dummy.vars[kY.above]]] == 0
-                        }))), 1, prod)
-                    
-                    tmp.hal[, (paste0("kY.", kY)) := kY.vector]
-
-                }
-            }
+            index.j <- as.numeric(gsub("P1.Y", "", names(tmp.hal)[substr(names(tmp.hal),1,4) == "P1.Y"]))
 
             for (kk in 1:length(fit.hals)) {
 
                 delta.value <- fit.hals[[kk]][["delta.value"]]
 
-                tmp3 <- merge(tmp3[, !(names(tmp3) %in% c(paste0("P", delta.value), paste0("surv", delta.value), paste0("surv", delta.value, ".1"))), with = FALSE],
-                              tmp.hal[observed.Y == 1, names(tmp.hal) %in% c("time", "id", paste0("P", delta.value), paste0("surv", delta.value), paste0("surv", delta.value, ".1")), with = FALSE], by = c("id", "time"))
-
-                if (length(grep("Y.1", Y.dummy.vars))>0) { #-- to handle dependence on Y.1:
-                    
-                    for (kY in index.j) {
-                        
-                        tmp.hal.kY <- tmp.hal[get(paste0("kY.", kY)) == 1]
-                        tmp.hal.kY[, (paste0("P", delta.value, ".Y", kY)) := get(paste0("P", delta.value))]
-
-                        tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, ".Y", kY)), with = FALSE],
-                                      tmp.hal.kY[, c(paste0("P", delta.value, ".Y", kY), "id", "time"), with = FALSE], by = c("id", "time"))
-
-                    }
-                    
-                } else {
-
-                    if (length(Y.dummy.vars)>0) {
-                        
-                        tmp.Y1 <- tmp.hal[Y.dummy == 1, c("id", "time",
-                                                          paste0("P", delta.value)), with = FALSE]
-
-                        setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
-            
-                        tmp.Y0 <- tmp.hal[Y.dummy == 0, c("id", "time",
-                                                          paste0("P", delta.value)), with = FALSE]
-
-                        setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
-                        
-                    } else { ##--- when there is no dependence on past of recurrent event process. (this can be improved/simplified)
-
-                        tmp.Y1 <- tmp.hal[, c("id", "time",
-                                              paste0("P", delta.value)), with = FALSE]
-
-                        setnames(tmp.Y1, paste0("P", delta.value), paste0("P", delta.value, ".Y1"))
-            
-                        tmp.Y0 <- tmp.hal[, c("id", "time",
-                                              paste0("P", delta.value)), with = FALSE]
-
-                        setnames(tmp.Y0, paste0("P", delta.value), paste0("P", delta.value, ".Y0"))
-
-                    }
-
-                    tmp3 <- merge(tmp3[, !(names(tmp3) %in% paste0("P", delta.value, c(".Y1", ".Y0"))), with = FALSE],
-                                  merge(tmp.Y1, tmp.Y0, by = c("id", "time")), by = c("id", "time"))
-
+                for (kY in index.j) {
+                    tmp.hal[Y.1 >= kY-1, (paste0("P", delta.value)) := get(paste0("P", delta.value, ".Y", kY))]
+                    ##tmp.hal[which.Y == kY, (paste0("P", delta.value)) := get(paste0("P", delta.value, ".Y", kY))]
                 }
 
+                tmp.hal[, (paste0("surv", delta.value)) := exp(-cumsum(get((paste0("P", delta.value))))), by = "id"]
+                #tmp.hal[, (paste0("surv", delta.value, ".1")) := exp(-cumsum(get((paste0("P", delta.value))))), by = "id"]
+                tmp.hal[, (paste0("surv", delta.value, ".1")) := c(1,get(paste0("surv", delta.value))[-.N]), by = "id"]
+                #tmp.hal[, (paste0("surv", delta.value, ".1.test2")) := get(paste0("surv", delta.value, ".1")), by = "id"]
+
+                tmp3 <- merge(tmp3[, !(names(tmp3) %in% c(paste0("P", delta.value), paste0("P", delta.value, ".Y", index.j), paste0("surv", delta.value), paste0("surv", delta.value, ".1"))), with = FALSE],
+                              tmp.hal[, names(tmp.hal) %in% c("time", "id", paste0("P", delta.value), paste0("P", delta.value, ".Y", index.j), paste0("surv", delta.value), paste0("surv", delta.value, ".1")), with = FALSE], by = c("id", "time"))
             }
         }
     }
-
+        
     if (browse2) browser()
     
     #--------------------------------    
@@ -702,116 +781,99 @@ tmle.est.fun <- function(dt,
     }
 
     #--------------------------------    
-    #-- "general" version of TMLE: 
+    #-- "general" version of TMLE:
+    # browser()
+    # Number of Y-history states
+    ### browser()
+    if (any(any.hal)) {
+        index.j <- sort(as.numeric(gsub("P1.Y", "", names(tmp.hal)[substr(names(tmp.hal),1,4) == "P1.Y"])))
+    } else {
+        index.j <- sort(as.numeric(gsub("P1.Y", "", names(tmp3)[substr(names(tmp3),1,4) == "P1.Y"])))
+    }
+
+    if (min(index.j) == 0) {
+        index.j <- index.j+1
+        for (kY in rev(index.j)) {
+            setnames(tmp3, paste0("P1.Y", kY-1), paste0("P1.Y", kY))
+            setnames(tmp3, paste0("P2.Y", kY-1), paste0("P2.Y", kY))
+ 
+        }
+    }
+
+    if (use.exponential) {
+
+        for (kY in index.j) {
+            tmp3[, (paste0("P1.Y", kY)) := 1-exp(-tmp3[[paste0("P1.Y", kY)]])]
+            tmp3[, (paste0("P2.Y", kY)) := 1-exp(-tmp3[[paste0("P2.Y", kY)]])]
+        }
+
+        tmp3[, P1 := 1-exp(-tmp3[["P1"]])]
+        tmp3[, P2 := 1-exp(-tmp3[["P2"]])]
+                           
+    }
+
+    if (verbose) print(index.j)
+    if (verbose2) print(summary(tmp3))
+
+    for (kY in index.j) {
+        tmp3[Y.1 >= kY-1, Y.dummy.index := kY]
+    }
+
+    K <- max(index.j)
+    states <- 1:K
+    
+    if (browse3) browser()
+
+    ## browser()
 
     for (iter in 1:max.iter) {
 
-         if (verbose) print(paste0("tmle iter = ", iter))
+        if (verbose) print(paste0("tmle iter = ", iter))
 
-         tmp3[time == rev(unique.times)[1], Z := P1 + Y.1]
+        setkey(tmp3, id, time)
+        dt_list <- split(tmp3, by="id", keep.by=TRUE)
 
-         tmp3[time == rev(unique.times)[1], clever.Z.D.0 := Z] 
-         tmp3[time == rev(unique.times)[1], clever.Z.D.1 := Y.1]
+        t2 <- system.time({
+            dt_list <- mclapply(
+                dt_list,
+                compute_Z_and_clever_per_id,
+                states = states,
+                mc.cores = min(detectCores()-1, parallelize.Z)
+            )
+        })
 
-         if (length(Y.dummy.max)>0) {
-             for (kY in index.j) {
-                 tmp3[time == rev(unique.times)[1], (paste0("Z.Y", kY)) := get(paste0("P1.Y", kY)) + Y.1]
-             }
-         } else {
-             tmp3[time == rev(unique.times)[1], Z.Y1 := P1.Y1 + Y.1]
-             tmp3[time == rev(unique.times)[1], Z.Y0 := P1.Y0 + Y.1]
-         }
+        test.error <- try(tmp3 <- rbindlist(dt_list))
 
-        tmp3[time == rev(unique.times)[1], clever.Z.Y.0 := Y.1] 
-        tmp3[time == rev(unique.times)[1], clever.Z.Y.1 := Y.1+1]
+        if (any(class(test.error) == "try-error")) {
+            t2 <- system.time({
+                dt_list <- mclapply(
+                    dt_list,
+                    compute_Z_and_clever_per_id,
+                    states = states,
+                    mc.cores = 1
+                )
+            })
+        }
 
-         tmp3[, Z.next := c(Z[-1], Z[.N]), by = "id"]
-         if (length(Y.dummy.max)>0) {
-             for (kY in index.j) {
-                 tmp3[, (paste0("Z.Y", kY, ".next")) := c(get(paste0("Z.Y", kY))[-1], Y[.N]), by = "id"]
-             }
-         } else {
-             tmp3[, Z.Y1.next := c(Z.Y1[-1], Y[.N]), by = "id"]
-             tmp3[, Z.Y0.next := c(Z.Y0[-1], 0), by = "id"]
-         }
-
-        ii.count <- 0
-
-         for (ii in length(unique.times):2) {
-
-            ii.count <- ii.count+1
-
-            if (verbose) if (round(ii.count/length(length(unique.times):2)*100) %% 10 == 0 & round((ii.count-1)/length(length(unique.times):2)*100) != round(ii.count/length(length(unique.times):2)*100))
-                             print(paste0(round(ii.count/length(length(unique.times):2)*100), "% done with current iterations"))
-
-             if (length(Y.dummy.max)>0) {
-
-                 for (kY in index.j) {
-
-                     #-- compute clever covariates for Y:
-                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          clever.Z.Y.0 := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-P2)+Y.1*P2]
-                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          clever.Z.Y.1 := (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) + 1 - (delta == 1))*(1-P2)+Y.1*P2]
-
-                     tmp3[time == unique.times[ii-1], 
-                     (paste0("Z.Y", kY)) := (get(paste0("Z.Y", kY, ".next")) - (delta == 1))*(1-get(paste0("P1.Y", kY))) + 
-                         (get(paste0("Z.Y", index.j1[index.j == kY], ".next")) - (delta == 1) + 1)*get(paste0("P1.Y", kY))]
-                     
-                     #-- compute clever covariates for D:
-                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          clever.Z.D.0 := get(paste0("Z.Y", kY))] 
-                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          clever.Z.D.1 := Y.1]
-                
-                     tmp3[time == unique.times[ii-1],
-                     (paste0("Z.Y", kY)) := get(paste0("Z.Y", kY))*(1-get(paste0("P2.Y", kY)))+Y.1*get(paste0("P2.Y", kY))]
-
-                     tmp3[time == unique.times[ii-1] & Y.dummy.index == kY,
-                          Z := get(paste0("Z.Y", kY))]
-
-                     tmp3[, Z.next := c(Z[-1], 1), by = "id"]
-                     tmp3[, (paste0("Z.Y", kY, ".next")) := c(get(paste0("Z.Y", kY))[-1], Y[.N]), by = "id"]
-
-                 }
-                 
-             } else {
-                              
-                 #-- compute clever covariates for Y:
-                 tmp3[time == unique.times[ii-1], clever.Z.Y.0 := ((Z.Y0.next - (delta == 1))*(Y.1 == 0) + (Z.Y1.next - (delta == 1))*(Y.1 >= 1))*(1-P2)+Y.1*P2]
-                 tmp3[time == unique.times[ii-1], clever.Z.Y.1 := (Z.Y1.next + 1 - (delta == 1))*(1-P2)+Y.1*P2]
-
-                 tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0.next - (delta == 1))*(1-P1.Y0)+(Z.Y1.next + 1 - (delta == 1))*P1.Y0] 
-                 tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1.next - (delta == 1))*(1-P1.Y1)+(Z.Y1.next + 1 - (delta == 1))*P1.Y1] 
-                 
-                 #-- compute clever covariates for D:
-                 tmp3[time == unique.times[ii-1], clever.Z.D.0 := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)] 
-                 tmp3[time == unique.times[ii-1], clever.Z.D.1 := Y.1]
-                
-                 tmp3[time == unique.times[ii-1], Z.Y1 := (Z.Y1*(1-P2.Y1)+Y.1*P2.Y1)]
-                 tmp3[time == unique.times[ii-1], Z.Y0 := (Z.Y0*(1-P2.Y0)+Y.1*P2.Y0)]
-
-                 tmp3[time == unique.times[ii-1], Z := Z.Y1*(Y.1 >= 1) + Z.Y0*(Y.1 == 0)]
-
-                 tmp3[, Z.next := c(Z[-1], 1), by = "id"]
-                 tmp3[, Z.Y1.next := c(Z.Y1[-1], 1), by = "id"]
-                 tmp3[, Z.Y0.next := c(Z.Y0[-1], 1), by = "id"]
-                 
-             }      
-         }
-        
-        #-- g.est: 
-        if (iter == 1) g.est <- tmp3[time == unique.times[1], mean(Z)]
+        if (verbose) print(t2)
         
         #-- current estimator for target parameter:  
-        target.est <- tmp3[time == unique.times[1], mean(Z)]
+        target.est <- mean(tmp3[, Z[1], by = "id"][[2]])
+
+        #-- g.est: 
+        if (iter == 1) g.est <- target.est
 
         #-- efficient influence curve:         
         eic <- tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1)) +
                                         sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2)) +
                                         Z[1]-target.est,
                     by = "id"][[2]]
-        if (iter == 1) target.se <- sqrt(mean(eic^2/n))
+        if (iter == 1) {
+            target.se <- sqrt(mean(eic^2/n))
+            if (return.eic) {
+                eic.out <- eic
+            }
+        }
 
         #-- check if solved well enough: 
         if (verbose) print(paste0("eic equation solved at = ", abs(mean(eic))))
@@ -821,49 +883,202 @@ tmle.est.fun <- function(dt,
             if (abs(mean(eic)) <= target.se/(sqrt(n)*log(n))) break(print(paste0("finished after ", iter, " iterations")))
         }
 
-         #-- otherwise update: 
-         target.fun.Y <- function(eps) {
-             mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1*exp(eps))), by = "id"][[2]])}
-         target.fun.D <- function(eps) {
-             mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2*exp(eps))), by = "id"][[2]])}
+        t3 <- system.time({
 
-         eps.Y <- nleqslv(0.00, target.fun.Y)$x
-         eps.D <- nleqslv(0.00, target.fun.D)$x
+            #-- otherwise update: 
+            target.fun.Y <- function(eps) {
+                mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.Y.1-clever.Z.Y.0)*((delta == 1) - P1*exp(eps))), by = "id"][[2]])}
+            target.fun.D <- function(eps) {
+                mean(tmp3[time <= final.time, sum(clever.weight*(clever.Z.D.1-clever.Z.D.0)*((delta == 2) - P2*exp(eps))), by = "id"][[2]])}
+
+            eps.Y <- nleqslv(0.00, target.fun.Y)$x
+            eps.D <- nleqslv(0.00, target.fun.D)$x
          
-         if (verbose) print(paste0("eps.Y = ", eps.Y))
-         if (verbose) print(paste0("eps.D = ", eps.D))
+            if (verbose) print(paste0("eps.Y = ", eps.Y))
+            if (verbose) print(paste0("eps.D = ", eps.D))
          
-         tmp3[, P1 := P1*exp(eps.Y)]
-         tmp3[, P2 := P2*exp(eps.D)]
+            tmp3[, P1 := P1*exp(eps.Y)]
+            tmp3[, P2 := P2*exp(eps.D)]
 
-         if (length(Y.dummy.max)>0) {
+            for (kY in index.j) {
+                tmp3[, (paste0("P1.Y", kY)) := get(paste0("P1.Y", kY))*exp(eps.Y)]
+                tmp3[, (paste0("P2.Y", kY)) := get(paste0("P2.Y", kY))*exp(eps.D)]
+            }
+        })
 
-             for (kY in index.j) {
-                 tmp3[, (paste0("P1.Y", kY)) := get(paste0("P1.Y", kY))*exp(eps.Y)]
-                 tmp3[, (paste0("P2.Y", kY)) := get(paste0("P2.Y", kY))*exp(eps.D)]
-             }
-
-         } else {
-             
-             tmp3[, P1.Y1 := P1.Y1*exp(eps.Y)]
-             tmp3[, P1.Y0 := P1.Y0*exp(eps.Y)]
-
-             tmp3[, P2.Y1 := P2.Y1*exp(eps.D)]
-             tmp3[, P2.Y0 := P2.Y0*exp(eps.D)]
-             
-         }
+        if (verbose) print(t3)
         
     }
 
-    if (output.lambda.cvs) {
-        return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues, lambda.cvs = lambda.cvs, hal.coefs = hal.coefs))
+    if (return.eic) {
+        if (output.lambda.cvs) {
+            return(list(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues, lambda.cvs = lambda.cvs, hal.coefs = hal.coefs),
+                        eic = eic.out))
+        } else {
+            return(list(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues),
+                        eic = eic.out))
+        }
     } else {
-        return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues))
+        if (output.lambda.cvs) {
+            return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues, lambda.cvs = lambda.cvs, hal.coefs = hal.coefs))
+        } else {
+            return(c(g.est = g.est, tmle.est = target.est, tmle.se = target.se, positivity.issues = positivity.issues))
+        }
     }
     
 }
 
 
+library(data.table)
+
+# -----------------------------------------------------------------------------
+# Function: compute_Z_and_clever_per_id
+# Purpose : For one individual, run backward matrix recursion over K states
+# -----------------------------------------------------------------------------
+
+compute_Z_and_clever_per_id <- function(dt_id,
+                                        states,
+                                        P1.col.pref = "P1.Y",
+                                        P2.col.pref = "P2.Y",
+                                        ycount.col = "Y.1",
+                                        delta.col = "delta",
+                                        state.idx.col = "Y.dummy.index") {
+
+
+    K <- length(states)
+    Tn <- nrow(dt_id)
+
+    P1_cols <- paste0(P1.col.pref, states)    # "P1.Y1","P1.Y2",...
+    P2_cols <- paste0(P2.col.pref, states)
+
+    P1_mat <- as.matrix(dt_id[, ..P1_cols])   # Tn x K
+    P2_mat <- as.matrix(dt_id[, ..P2_cols])   # Tn x K
+
+    # containers for Z vectors per time (each is length K)
+    Z_by_time <- vector("list", Tn)          # will store numeric vectors length K
+    Znext_by_time <- vector("list", Tn)      # store Z_next used for clever covariates (optional)
+    # output columns per row (these are scalars per row)
+    Z_row <- numeric(Tn)
+    clever_Y0_row <- numeric(Tn)
+    clever_Y1_row <- numeric(Tn)
+    clever_D0_row <- numeric(Tn)
+    clever_D1_row <- numeric(Tn)   
+
+    # Terminal time initialization (last row) 
+    last_idx <- Tn
+    P1_last <- P1_mat[last_idx, ]   # vector length K
+    Z_T <- as.numeric(P1_last)
+    Z_by_time[[last_idx]] <- Z_T
+    Znext_by_time[[last_idx]] <- Z_T
+  
+    # Backwards recursion
+    # Loop tt from Tn-1 down to 1; for each tt we compute Z_t (vector length K)
+    for (tt in (Tn - 1):1) {
+
+        # Next-step vector
+        Z_next <- Z_by_time[[tt + 1]]        # length K
+        Z_next_j1 <- c(Z_next[-1], Z_next[K])
+        
+        # Extract P1 and P2 for this time (vectors length K)
+        P1_vec <- as.numeric(P1_mat[tt, ])
+        P2_vec <- as.numeric(P2_mat[tt, ])
+        
+        ## Z_t <- (1-P1_vec)*(1-P2_vec) * Z_next + P1_vec*(1-P2_vec) * Z_next_j1 + (1-P2_vec)*P1_vec
+        Z_t <- (1-P1_vec-P2_vec) * Z_next + P1_vec * Z_next_j1 + P1_vec
+        
+        Z_by_time[[tt]] <- Z_t
+        Znext_by_time[[tt]] <- Z_next
+    }
+
+    for (tt in seq_len(Tn)) {
+        state_pos <- as.integer(dt_id[[state.idx.col]][tt])  
+
+        # Current Z for the observed state
+        Z_row[tt] <- Z_by_time[[tt]][state_pos]
+
+        # clever.Z.D.1 is 0
+        clever_D1_row[tt] <- 0
+
+        # clever.Z.D.0 := Z at the state
+        clever_D0_row[tt] <- Z_row[tt]
+
+        # clever.Z.Y.* come from Z_next
+        Znext_tt <- Znext_by_time[[tt]]
+        # Z.Y0: use Z_next for same state
+        clever_Y0_row[tt] <- Znext_tt[state_pos]
+        # Z.Y1: use Z_next of next state (cap at last)
+        next_state_pos <- min(state_pos + 1, K)
+        clever_Y1_row[tt] <- (Znext_tt[next_state_pos] + 1) 
+    }
+
+    out_dt <- cbind(
+        data.table(id = dt_id$id,
+                   time = dt_id$time,
+                   final.time = dt_id$final.time,
+                   clever.weight = dt_id$clever.weight,
+                   delta = dt_id$delta,
+                   P1 = dt_id$P1,
+                   P2 = dt_id$P2,
+                   Y.dummy.index = dt_id$Y.dummy.index,
+                   Z = Z_row,
+                   clever.Z.Y.0 = clever_Y0_row,
+                   clever.Z.Y.1 = clever_Y1_row,
+                   clever.Z.D.0 = clever_D0_row,
+                   clever.Z.D.1 = clever_D1_row),
+        P1_mat, P2_mat)[]
+
+    # Keep original row order
+    setorder(out_dt, time)
+    return(out_dt)
+}
+
+
+
 ######################################################################
 ### tmle.estimation.fun.R ends here
+
+library(digest)
+
+hash_sparse_rows_dgC <- function(M) {
+    stopifnot(inherits(M, "dgCMatrix"))
+
+    p  <- M@p
+    i  <- M@i
+    x  <- M@x
+    nr <- M@Dim[1]
+
+    # storage: list of integer/values per row
+    idx_list <- vector("list", nr)
+    val_list <- vector("list", nr)
+
+    # loop over columns, add entries to each row
+    for (col in seq_len(M@Dim[2])) {
+        start <- p[col] + 1
+        end   <- p[col + 1]
+
+        if (end >= start) {
+            rows <- i[start:end] + 1        # row indices (1-based)
+            vals <- x[start:end]            # values
+
+            # append col index + value to each row's list
+            for (k in seq_along(rows)) {
+                r <- rows[k]
+                idx_list[[r]] <- c(idx_list[[r]], col)
+                val_list[[r]] <- c(val_list[[r]], vals[k])
+            }
+        }
+    }
+
+    # hash each row using only the sparse pattern
+    out <- character(nr)
+    for (r in seq_len(nr)) {
+        out[r] <- digest::digest(
+                              list(idx_list[[r]], val_list[[r]]),
+                              algo = "xxhash64",
+                              serialize = TRUE
+                          )
+    }
+
+    out
+}
 

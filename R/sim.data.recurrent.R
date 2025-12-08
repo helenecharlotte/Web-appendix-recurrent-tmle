@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct  2 2024 (14:47) 
 ## Version: 
-## Last-Updated: Apr  1 2025 (07:32) 
+## Last-Updated: Dec  8 2025 (09:40) 
 ##           By: Helene
-##     Update #: 150
+##     Update #: 327
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -114,6 +114,8 @@ sim.data.fun <- function(n = 200,
     betaT.time.t0 <- 0
     betaT.A.t0 <- 0
 
+    betaT.U <- 0
+
     #-- effects on terminal process:
     betaT2.A <- -0.4
     betaT2.L1 <- 0.7
@@ -132,6 +134,8 @@ sim.data.fun <- function(n = 200,
     betaC.L1xL3 <- 0
     betaT.AxL1 <- 0
     betaT.L1xL3 <- 0
+    betaT.L2.k <- 0
+    betaC.L2.k <- 0
 
     if (sim.setting == "1A") {
 
@@ -309,6 +313,10 @@ sim.data.fun <- function(n = 200,
 
         if (cens.percentage == "low") {
             alpha.C <- -0.5
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.2
+        } else if (cens.percentage == "30%") {
+            alpha.C <- 0
         } else {
             alpha.C <- 0.5
         }
@@ -321,6 +329,189 @@ sim.data.fun <- function(n = 200,
 
         betaC.k3 <- 1.8
         betaC.k <- -0.8
+
+    } else if (sim.setting == "4B") { # independent censoring
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.6
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.3
+        } else if (cens.percentage == "30%") {
+            alpha.C <- -0.1
+        } else {
+            alpha.C <- 0.3
+        }
+
+        betaT.k <- -0.8
+        betaT.k3 <- 2.1
+        betaT2.k <- 1.4
+        alpha.T <- 2.1
+        alpha.T2 <- 0
+
+        betaC.k3 <- 0
+        betaC.k <- 0
+
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+    } else if (sim.setting == "5A") { # with interaction
+
+          if (cens.percentage == "low") {
+              alpha.C <- -1.4
+          } else if (cens.percentage == "10%") {
+              alpha.C <- -2.1
+          } else if (cens.percentage == "30%")  {
+              alpha.C <- -0.8
+          } else {
+              alpha.C <- -0.3
+          }
+        
+          betaT.k <- 2.1
+          betaT2.k <- 1.4
+          betaC.k <- 1.8
+          alpha.T <- 0.8
+          alpha.T2 <- 0
+
+          betaT.L2.k <- -2.8
+          betaC.L2.k <- -2.5
+
+    } else if (sim.setting == "5B") { # censoring is independent 
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.9
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.6
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -0.3
+        } else {
+            alpha.C <- 0.1
+        }
+
+        betaT.k <- 2.1
+        betaT2.k <- 1.4
+        betaC.k <- 0
+        alpha.T <- 0.8
+        alpha.T2 <- 0
+        
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+        betaT.L2.k <- -2.8
+
+    } else if (sim.setting == "5C") { # treatment not randomized
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1.4
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -2.1
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -0.8
+        } else {
+            alpha.C <- -0.3
+        }
+        
+        betaT.k <- 2.1
+        betaT2.k <- 1.4
+        betaC.k <- 1.8
+        alpha.T <- 0.8
+        alpha.T2 <- 0
+
+        betaT.L2.k <- -2.8
+        betaC.L2.k <- -2.5
+
+        randomize.A <- FALSE
+
+    } else if (sim.setting == "6A") {
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1.1
+        } else {
+            alpha.C <- -0.1
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.5
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+       
+        betaC.k <- 0
+
+        betaT.U <- 1.5
+
+    } else if (sim.setting == "6B") { ## censoring dependent on Ny
+
+        if (cens.percentage == "low") {
+            alpha.C <- -2.4
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -3.2
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -1.9
+        } else {
+            alpha.C <- -1.3
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.5
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+       
+        betaC.k <- 1.8
+
+        betaT.U <- 1.5
+
+    } else if (sim.setting == "6Bx") { ## censoring dependent on Ny
+
+        if (cens.percentage == "low") {
+            alpha.C <- -2.5
+        } else {
+            alpha.C <- -1.5
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 0.8
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+       
+        betaC.k <- 1.8
+
+        betaT.U <- 3
+
+    } else if (sim.setting == "6C") { ## independent censoring
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.7
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -0.4
+        } else {
+            alpha.C <- -0.1
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0
+        
+        alpha.T <- 1.5
+        alpha.T2 <- 0.4
+
+        betaT.A <- -0.8
+        betaT2.A <- -0.4
+       
+        betaC.k <- 0
+
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+        betaT.U <- 1.5
 
     }
 
@@ -349,8 +540,17 @@ sim.data.fun <- function(n = 200,
     ##U <- runif(n, -1, 1)
     if (length(seed)>0) set.seed(seed)
     L1 <- runif(n, -1, 1)
-    U <- runif(n, -1, 1)
-    L2 <- runif(n, 0, 1)
+    if (substr(sim.setting, 1, 1) == "6") {
+        U <- rgamma(n, betaT.U)
+        print(mean(U))
+    } else {
+        U <- 1
+    }
+    if (substr(sim.setting, 1, 1) == "5") { 
+        L2 <- rbinom(n, 1, 0.5)
+    } else {
+        L2 <- runif(n, 0, 1)
+    }
     L3 <- runif(n, 0, 1)
 
     if (randomize.A) {
@@ -364,9 +564,11 @@ sim.data.fun <- function(n = 200,
     #-- recurrent event intensity:
     
     phiT <- function(t, A, L1, L2, L3, betaT.A, betaT.time, k) {
-        return(exp(alpha.T+A*betaT.A+L1^2*betaT.L1+betaT.k*(k>1)+
-                   betaT.time*(k>1)+betaT.k3*(k>3)+
-                   betaT.L1xL3*L1*L3+betaT.AxL1*A*(L1 >= 0.5)))
+        return(U*exp(alpha.T+A*betaT.A+L1^2*betaT.L1+
+                     #betaT.U*U+
+                     betaT.k*(k>1)+
+                     betaT.time*(k>1)+betaT.k3*(k>3)+
+                     betaT.L2.k*(k>1)*L2))
     }
 
     lambdaT <- function(t, A, L1, L2, L3, betaT.A, betaT.time, eta, nu, k) {
@@ -378,7 +580,7 @@ sim.data.fun <- function(n = 200,
     phiC <- function(t, A, L1, L2, L3, k) {
         return(exp(betaC.L3*L3 + betaC.L1*L1 + betaC.A*A + 0.1 + alpha.C +
                    betaC.k*(k>1) + betaC.k3*(k>3) +
-                   betaC.AxL1*A*L1^2 + betaC.L1xL3*L1*L3))
+                   betaC.L2.k*(k>1)*L2))
     }
 
     lambdaC <- function(t, A, L1, L2, L3, eta, nu, k) {

@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (09:34) 
 ## Version: 
-## Last-Updated: Dec  5 2025 (20:15) 
+## Last-Updated: Dec  8 2025 (13:29) 
 ##           By: Helene
-##     Update #: 260
+##     Update #: 270
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -23,6 +23,7 @@ predict.hal <- function(seed = NULL, #13349,
                         treatment = "Aobs", ## the *observed* treatment variable
                         treatment.prediction = "A", ## the *counterfactual* treatment variable
                         parallelize.predict = 1,
+                        cv.fit = FALSE,
                         verbose = FALSE, verbose2 = FALSE,
                         browse0 = FALSE,
                         browse1 = FALSE,
@@ -189,9 +190,18 @@ predict.hal <- function(seed = NULL, #13349,
                                        for (kk in 1:length(fit.hals)) {
         
                                            delta.value <- fit.hals[[kk]][["delta.value"]]
-        
-                                           pseudo.ii[, (paste0("fit.lambda", delta.value)) := exp(predict(fit.hals[[kk]][["hal.fit"]], X.ii[, hal.vars.list[[kk]]],
-                                                                                                          newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
+
+                                           if (cv.fit) {
+                                               for (jjj in 1:length(fit.hals[[kk]]$train.fit)) {
+                                                   test.set <- fit.hals[[kk]]$train.fit[[jjj]]$test.set
+                                                   train.fit <- fit.hals[[kk]]$train.fit[[jjj]]$train.fit 
+                                                   pseudo.ii[id %in% test.set, (paste0("fit.lambda", delta.value)) := exp(predict(train.fit, X.ii[pseudo.ii[["id"]] %in% test.set, hal.vars.list[[kk]]],
+                                                                                                                  newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
+                                               }
+                                           } else {
+                                               pseudo.ii[, (paste0("fit.lambda", delta.value)) := exp(predict(fit.hals[[kk]][["hal.fit"]], X.ii[, hal.vars.list[[kk]]],
+                                                                                                              newoffset=0, s=fit.hals[[kk]][["lambda.cv"]]))]
+                                           }
                                            pseudo.ii[, (paste0("fit.dLambda", delta.value)) := get(paste0("fit.lambda", delta.value))*risk.time]
                                            pseudo.ii[, (paste0("fit.Lambda", delta.value)) := cumsum(get(paste0("fit.dLambda", delta.value))), by = by.vars2]
 

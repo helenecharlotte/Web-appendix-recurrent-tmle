@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (09:34) 
 ## Version: 
-## Last-Updated: Dec  7 2025 (19:06) 
+## Last-Updated: Dec  9 2025 (13:46) 
 ##           By: Helene
-##     Update #: 161
+##     Update #: 179
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -28,6 +28,7 @@ fit.hal <- function(seed = NULL,#13349,
                     V = 5,
                     browse = FALSE, 
                     parallelize.cve = 1,
+                    event.dependent.cv = FALSE,
                     reduce.seed.dependence = FALSE,
                     lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
                     verbose = FALSE
@@ -93,6 +94,8 @@ fit.hal <- function(seed = NULL,#13349,
                               lambda.cvs = lambda.cvs,
                               delta.var = delta.var,
                               delta.value = delta.value,
+                              event.dependent.cv = event.dependent.cv,
+                              verbose = verbose,
                               seed = if(is.null(seed)) NULL else {seed+5843})
         
             lambda.cv <- cve.hal$min$lambda.cv
@@ -110,7 +113,9 @@ fit.hal <- function(seed = NULL,#13349,
                                                  lambda.cvs = lambda.cvs,
                                                  delta.var = delta.var,
                                                  delta.value = delta.value,
-                                                 seed = if(is.null(seed)) NULL else {seed+5843})
+                                                 event.dependent.cv = event.dependent.cv,
+                                                 verbose = verbose,
+                                                 seed = if(is.null(seed)) NULL else {seed+5843+mm*20})
 
                 }
                 cve <- rowMeans(do.call("cbind", lapply(cve.hal.list, function(xlist) xlist$all[, "cve"])))
@@ -125,6 +130,8 @@ fit.hal <- function(seed = NULL,#13349,
                                   lambda.cvs = lambda.cvs,
                                   delta.var = delta.var,
                                   delta.value = delta.value,
+                                  event.dependent.cv = event.dependent.cv,
+                                  verbose = verbose,
                                   seed = if(is.null(seed)) NULL else {seed+5843})
                 lambda.cv <- cve.hal$min$lambda.cv
             }
@@ -185,13 +192,23 @@ fit.hal <- function(seed = NULL,#13349,
     }
 
     if (verbose) {
-        print("--------------------------------------------")
-        print(paste0(delta.var, " = ", delta.value))
-        print("--------------------------------------------")
+        message("--------------------------------------------")
+        message(paste0(delta.var, " = ", delta.value))
+        message("--------------------------------------------")
         print(coef(hal.fit, s=lambda.cv))
-    }
 
-    return(list(delta.value = delta.value, hal.fit = hal.fit, lambda.cv = lambda.cv))
+        if (FALSE) {
+            print(coef(cve.hal$train.fit[[1]]$train.fit, s=lambda.cv))
+        }
+    }
+    
+    if (reduce.seed.dependence>1) {
+        return(list(delta.value = delta.value, hal.fit = hal.fit, lambda.cv = lambda.cv,
+                    train.fit = cve.hal.list[[1]]$train.fit))
+    } else {
+        return(list(delta.value = delta.value, hal.fit = hal.fit, lambda.cv = lambda.cv,
+                    train.fit = cve.hal$train.fit))
+    }
 
 }
 

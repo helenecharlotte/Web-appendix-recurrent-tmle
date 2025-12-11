@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct  2 2024 (14:47) 
 ## Version: 
-## Last-Updated: Dec  8 2025 (09:40) 
+## Last-Updated: Dec 11 2025 (19:43) 
 ##           By: Helene
-##     Update #: 327
+##     Update #: 400
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -270,45 +270,6 @@ sim.data.fun <- function(n = 200,
         
         betaC.k <- 0
 
-    } else if (sim.setting == "3A1") {
-
-        if (cens.percentage == "low") {
-            alpha.C <- -0.95
-        } else {
-            alpha.C <- -0.05
-        }
-
-        betaT.k <- 0
-        betaT2.k <- 0
-        
-        alpha.T <- 1.1
-        alpha.T2 <- 0.4
-
-        betaT.A <- -0.8
-        betaT2.A <- -0.4
-        
-        betaC.k <- 0
-        betaC.L3 <- betaC.L1 <- betaC.A <- 0
-
-    } else if (sim.setting == "3A2") {
-
-        if (cens.percentage == "low") {
-            alpha.C <- -2.3
-        } else {
-            alpha.C <- -1.2
-        }
-
-        betaT.k <- 0
-        betaT2.k <- 0
-        
-        alpha.T <- 1.1
-        alpha.T2 <- 0.4
-
-        betaT.A <- -0.8
-        betaT2.A <- -0.4
-        
-        betaC.k <- 1.8
-
     } else if (sim.setting == "4A") {
 
         if (cens.percentage == "low") {
@@ -465,27 +426,6 @@ sim.data.fun <- function(n = 200,
 
         betaT.U <- 1.5
 
-    } else if (sim.setting == "6Bx") { ## censoring dependent on Ny
-
-        if (cens.percentage == "low") {
-            alpha.C <- -2.5
-        } else {
-            alpha.C <- -1.5
-        }
-
-        betaT.k <- 0
-        betaT2.k <- 0
-        
-        alpha.T <- 0.8
-        alpha.T2 <- 0.4
-
-        betaT.A <- -0.8
-        betaT2.A <- -0.4
-       
-        betaC.k <- 1.8
-
-        betaT.U <- 3
-
     } else if (sim.setting == "6C") { ## independent censoring
 
         if (cens.percentage == "low") {
@@ -513,6 +453,62 @@ sim.data.fun <- function(n = 200,
 
         betaT.U <- 1.5
 
+    } else if (sim.setting == "7A") { ## censoring dependent on Ny
+
+        if (cens.percentage == "low") {
+            alpha.C <- -1.8
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -2.7
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -1.2
+        } else {
+            alpha.C <- -0.7
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 1.2
+        
+        alpha.T <- 1.2
+        alpha.T2 <- 0.4
+
+        betaT.A <- -1.2
+        betaT2.A <- -0.4
+       
+        betaC.k <- 1.8
+
+        betaT.U <- 1.5
+
+        randomize.A <- FALSE
+
+    } else if (sim.setting == "7B") { ## independent censoring + randomized treatment
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.5
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.2
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- 0.0
+        } else {
+            alpha.C <- 0.4
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 1.2
+        
+        alpha.T <- 1.2
+        alpha.T2 <- 0.4
+
+        betaT.A <- -1.2
+        betaT2.A <- -0.4
+       
+        betaC.k <- 0
+
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+        betaT.U <- 1.5
+
+        randomize.A <- TRUE
+
     }
 
     if (verbose) {
@@ -539,18 +535,31 @@ sim.data.fun <- function(n = 200,
 
     ##U <- runif(n, -1, 1)
     if (length(seed)>0) set.seed(seed)
-    L1 <- runif(n, -1, 1)
-    if (substr(sim.setting, 1, 1) == "6") {
+
+    if (substr(sim.setting, 1, 1) %in% c("6")) {
         U <- rgamma(n, betaT.U)
         print(mean(U))
+        print(sd(U))
+    } else if (substr(sim.setting, 1, 1) %in% c("7")) {
+        U <- rgamma(n, 1/2, 1/betaT.U/4)
+        if (verbose) print(mean(U))
+        if (verbose) print(sd(U))
     } else {
         U <- 1
     }
-    if (substr(sim.setting, 1, 1) == "5") { 
+
+    if (substr(sim.setting, 1, 1) %in% c("5", "7")) { 
         L2 <- rbinom(n, 1, 0.5)
     } else {
         L2 <- runif(n, 0, 1)
     }
+
+    if (substr(sim.setting, 1, 1) %in% c("7")) {
+        L1 <- rbinom(n, 2, 0.5)/4
+    } else {
+        L1 <- runif(n, -1, 1)
+    }
+    
     L3 <- runif(n, 0, 1)
 
     if (randomize.A) {
@@ -635,7 +644,6 @@ sim.data.fun <- function(n = 200,
     Tlist <- list(cbind(time=rep(0, n), delta=rep(0, n), id=1:n))
 
     #-- function to loop over for time-points: 
-    if (verbose) set.seed(seed+120202)
     loop.fun <- function(k, Tprev) {
 
         #-- simulate event time: 

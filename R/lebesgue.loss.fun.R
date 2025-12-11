@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 15 2024 (10:13) 
 ## Version: 
-## Last-Updated: Dec  7 2025 (20:09) 
+## Last-Updated: Dec  8 2025 (14:36) 
 ##           By: Helene
-##     Update #: 36
+##     Update #: 37
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -32,7 +32,7 @@ lebesgue.loss.fun <- function(train.fit,
 
     tmp[id %in% test.set, dN:=1*ddd]
 
-    return(tmp[id %in% test.set, -sum(log(fit.lambda)*dN - fit.dLambda)])
+    return(tmp[id %in% test.set, -sum(log(fit.lambda)*dN - fit.dLambda)] / length(test.set))
 }
 
 ######################################################################

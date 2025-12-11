@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Oct 14 2024 (15:01) 
 ## Version: 
-## Last-Updated: Dec  7 2025 (19:43) 
+## Last-Updated: Dec 10 2025 (10:24) 
 ##           By: Helene
-##     Update #: 1273
+##     Update #: 1291
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -38,13 +38,15 @@ tmle.est.fun <- function(dt,
                          max.iter = 100,
                          #--- HAL parameters:
                          lambda.cvs = c(sapply(1:5, function(jjj) (9:1)/(10^jjj))),
-                         min.no.of.ones = 0.05,
+                         min.no.of.ones = 0.01,
                          cut.one.way = 15,
                          cut.time.varying = 5,
                          cut.time = 35,
                          cut.two.way = 5,
                          penalize.time = FALSE,
                          reduce.seed.dependence = FALSE,
+                         event.dependent.cv = FALSE,
+                         cv.hal.fit = FALSE,
                          parallelize.Z = 1,
                          parallelize.cve = parallelize.Z,
                          parallelize.predict = parallelize.Z,
@@ -454,12 +456,12 @@ tmle.est.fun <- function(dt,
 
         if (browse.hal) browser()
 
-        fit.hals <- lapply(c(1,2,0)[any.hal], function(delta.value) {
+        if (length(seed.hal) == 0) seed.hal <- sample(1e8, 1)
 
-            message("---------------------------------------------------------------------------------------")
-            print(delta.value)
-            message("---------------------------------------------------------------------------------------")
-            
+        ## print(paste0("seed.hal = ", seed.hal))
+
+        fit.hals <- lapply(c(1,2,0)[any.hal], function(delta.value) {
+           
             first.hal <- fit.hal(
                 hal.pseudo.dt = tmp.hal.reduced, 
                 X.hal = X, 
@@ -470,6 +472,7 @@ tmle.est.fun <- function(dt,
                 lambda.cvs = lambda.cvs,
                 penalize.time = !(cut.two.way == 0),
                 penalize.treatment = !(cut.two.way == 0),
+                event.dependent.cv = event.dependent.cv,
                 reduce.seed.dependence = reduce.seed.dependence,
                 V = V,
                 parallelize.cve = parallelize.cve,
@@ -537,6 +540,7 @@ tmle.est.fun <- function(dt,
                     lambda.cvs = lambda.cvs,
                     penalize.time = penalize.time,
                     reduce.seed.dependence = reduce.seed.dependence,
+                    event.dependent.cv = event.dependent.cv,
                     V = V,
                     parallelize.cve = parallelize.cve,
                     cv.glmnet = cv.glmnet,
@@ -578,6 +582,7 @@ tmle.est.fun <- function(dt,
             treatment = "Aobs",
             treatment.prediction = Aname,
             parallelize.predict = parallelize.predict,
+            cv.fit = cv.hal.fit,
             verbose = verbose,
             verbose2 = verbose2,
             seed = seed.hal)

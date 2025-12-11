@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Nov 12 2024 (15:29) 
 ## Version: 
-## Last-Updated: Apr  1 2025 (13:27) 
+## Last-Updated: Dec 11 2025 (19:55) 
 ##           By: Helene
-##     Update #: 15
+##     Update #: 17
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -14,6 +14,14 @@
 #----------------------------------------------------------------------
 ## 
 ### Code:
+
+
+if (system("echo $USER",intern=TRUE)%in%c("jhl781")){
+    setwd("//projects/biostat01/people/jhl781/research/TMLE-from-2020june/targeted-max-likelihood/Web-appendix-recurrent-tmle/")
+    .libPaths( c( .libPaths(), "//projects/biostat01/people/jhl781/tmp"))
+} else {
+    setwd("~/research/TMLE-from-2020june/targeted-max-likelihood/Web-appendix-recurrent-tmle/")
+}
 
 library(hdnom)
 library(MASS)
@@ -25,30 +33,47 @@ library(zoo)
 library(nleqslv)
 library(foreach)
 library(doParallel)
+library(parallel)
 library(xtable)
 library(stringr)
 library(glmnet)
 library(Matrix)
+library(digest)
 library(rlist)
+
 
 #-------------------------------------------------------------------------------------------#
 ## source relevant scripts
 #-------------------------------------------------------------------------------------------#
 
-source("./R/tmle.estimation.fun.R")
-source("./R/sim.data.recurrent.R")
-source("./R/lebesgue.loss.fun.R")
-source("./R/cv.fun.R")     
-source("./R/basis.fun.R")
-source("./R/fit.hal.R")
-source("./R/predict.hal.R")
+if (FALSE) {
+
+    source("./backup/dec-5-25/R/tmle.estimation.fun.R")
+    source("./backup/dec-5-25/R/sim.data.recurrent.R")
+    source("./backup/dec-5-25/R/lebesgue.loss.fun.R")
+    source("./backup/dec-5-25/R/cv.fun.R")     
+    source("./backup/dec-5-25/R/basis.fun.R")
+    source("./backup/dec-5-25/R/fit.hal.R")
+    source("./backup/dec-5-25/R/predict.hal.R")
+    
+} else {
+    
+    source("./R/tmle.estimation.fun.R")
+    source("./R/sim.data.recurrent.R")
+    source("./R/lebesgue.loss.fun.R")
+    source("./R/cv.fun.R")     
+    source("./R/basis.fun.R")
+    source("./R/fit.hal.R")
+    source("./R/predict.hal.R")
+    
+}
 
 #-------------------------------------------------------------------------------------------#
 ## specify parameters for simulation setting
 #-------------------------------------------------------------------------------------------#
 
 n <- 500
-M <- 250
+M <- 1000
 
 verbose <- TRUE
 
@@ -56,12 +81,9 @@ get.truth <- FALSE
 get.uncensored.truth <- FALSE
 get.cens.fraction <- FALSE
 
-
-### NB: number of cores specified later!
-
 if (get.truth) {
-    for (intervention.A in c(1)) {
-        for (sim.setting in c("1A", "1B", "2A", "2B", "3A")) {
+    for (intervention.A in c(1,0)) {
+        for (sim.setting in c("7B")) { #c("1A", "1B", "2A", "2B", "3A")
             true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, intervention.A = intervention.A, rep.true = 50)
             saveRDS(true.psi,
                     file=paste0("./output/",
@@ -75,7 +97,7 @@ if (get.truth) {
 }
 
 if (get.uncensored.truth) {
-    for (sim.setting in c("1A", "1B", "2A", "2B", "3A")) {
+    for (sim.setting in c("5C")) { #c("1A", "1B", "2A", "2B", "3A")
         true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, censoring = FALSE, rep.true = 50)
         saveRDS(true.psi,
                 file=paste0("./output/",
@@ -87,8 +109,8 @@ if (get.uncensored.truth) {
 }
 
 if (get.cens.fraction) {
-    for (sim.setting in c("1A", "1B", "2A", "2B", "3A")) {
-        for (cens.percentage in c("low", "high")) {
+    for (sim.setting in c("7B")) { #c("1A", "1B", "2A", "2B", "3A")
+        for (cens.percentage in c("low", "high", "10%", "30%")) {
             print(paste0("sim.setting ", sim.setting, ": ",
                          cens.fraction <- sim.data.outer(sim.setting = sim.setting,
                                                          cens.percentage = cens.percentage,
@@ -110,15 +132,23 @@ if (get.cens.fraction) {
 ## loop over simulation repetitions
 #-------------------------------------------------------------------------------------------#
 
-#--- interventions ---#
 for (intervention.A in c(1)) {
 
     #--- simulation setting ---#
-    for (sim.setting in c("1A", "1B", "2A", "2B", "3A")) {
+    for (sim.list in list(
+                         list(sim.setting = "4A",
+                              misspecify.list = list(
+                                  c(misspecify.T = FALSE, misspecify.C = FALSE),
+                                  c(misspecify.T = TRUE, misspecify.C = FALSE),
+                                  c(misspecify.T = 2, misspecify.C = 2)
+                              ))
+                     )) {
+ 
+        sim.setting <- sim.list[["sim.setting"]]
+        misspecify.list <- sim.list[["misspecify.list"]]
 
-        #--- amount of censoring ---#
-        for (cens.percentage in c("low", "high")) { 
-
+        #--- amount of censoring ---# 
+        for (cens.percentage in c("low", "high", "10%", "30%")) { #
 
             print("-----------------------------------------------------------------------------------")
             print("-----------------------------------------------------------------------------------")
@@ -126,54 +156,172 @@ for (intervention.A in c(1)) {
             print(paste0("cens.percentage = ", cens.percentage))
             print("-----------------------------------------------------------------------------------")
         
-            for (misspecify.list in list(
-                                        c(misspecify.T = FALSE, misspecify.C = FALSE)
-                                    )) {
+            for (misspecify in misspecify.list) {
 
-                misspecify.T <- misspecify.list["misspecify.T"][[1]]
-                misspecify.C <- misspecify.list["misspecify.C"][[1]]
-                use.hal <- misspecify.list["use.hal"][[1]]
-                btmle <- misspecify.list["btmle"][[1]]
+                misspecify.T <- misspecify["misspecify.T"][[1]]
+                misspecify.C <- misspecify["misspecify.C"][[1]]
+                use.hal <- misspecify["use.hal"][[1]]
+                btmle <- misspecify["btmle"][[1]]
 
                 if (!is.na(use.hal)) {
                     misspecify.T <- misspecify.C <- FALSE
+
+                    if (length(grep("no-interaction", use.hal)) > 0) {
+                        cut.two.way <- 0
+                        cut.time.treatment <- 0
+                        cut.time.covar <- 0
+                        cut.time.time.varying.covar <- 0
+                    } else {
+                        cut.two.way <- 10
+                        cut.time.treatment <- 10
+                        cut.time.covar <- 10
+                        cut.time.time.varying.covar <- 10
+                    }
+                        
+                    if ((num <- gregexpr('[0-9]+',use.hal)[[1]][1])>0) {
+                        cut.time.varying <- as.numeric(substr(use.hal, num, nchar(use.hal)))                                          
+                    } else {
+                        cut.time.varying <- 6
+                    }
+                    
+                    cut.time <- misspecify["cut.time"][[1]]
+                    if (is.na(cut.time)) {
+                        cut.time <- 35
+                    } else {
+                        use.hal <- paste0(use.hal, "-cut-time-", cut.time)
+                        cut.time <- as.numeric(cut.time)
+                    }                                                
+
+                    cut.one.way <- misspecify["cut.one.way"][[1]]
+                    if (is.na(cut.one.way)) {
+                        cut.one.way <- 35
+                    } else {
+                        use.hal <- paste0(use.hal, "-cut-one-way-", cut.one.way)
+                        cut.one.way <- as.numeric(cut.one.way)
+                    }
+
+                    use.exponential <- misspecify["use.exponential"][[1]]
+                    if (is.na(use.exponential)) {
+                        use.exponential <- FALSE
+                    } else {
+                        use.exponential <- (use.exponential == "TRUE")
+                        use.hal <- paste0(use.hal, "-use-exponential-", use.exponential)
+                    }
+
+                    cv.hal.fit <- misspecify["cv.hal.fit"][[1]]
+                    if (is.na(cv.hal.fit)) {
+                        cv.hal.fit <- FALSE
+                    } else {
+                        cv.hal.fit <- (cv.hal.fit == "TRUE")
+                        use.hal <- paste0(use.hal, "-cv.hal.fit-", cv.hal.fit)
+                    }
+
+                    
+                    V <- misspecify["V"][[1]]
+                    if (is.na(V)) {
+                        V <- 10
+                    } else {
+                        V <- as.numeric(V)
+                        use.hal <- paste0(use.hal, "-V", V)
+                    }
+
+                    reduce.seed.dependence <- misspecify["reduce.seed.dependence"][[1]]
+                    if (is.na(reduce.seed.dependence)) {
+                        reduce.seed.dependence <- FALSE
+                    } else {
+                        reduce.seed.dependence <- as.numeric(reduce.seed.dependence)
+                        use.hal <- paste0(use.hal, "-reduce.seed.dependence", reduce.seed.dependence)
+                    }
+                    
+                    event.dependent.cv <- misspecify["event.dependent.cv"][[1]]
+                    if (is.na(event.dependent.cv)) {
+                        event.dependent.cv <- FALSE
+                    } else {
+                        event.dependent.cv <- (event.dependent.cv == "TRUE")
+                        use.hal <- paste0(use.hal, "-event.dependent.cv", event.dependent.cv)
+                    }
                 }
 
-                if (!is.na(use.hal)) {
-                    no.cores <- 15*ifelse(n == 250, 2, 1)
-                }
+                parallelize.Z <- ifelse(detectCores()>15, 5, 3)
+                no.cores <- floor(min(detectCores()/parallelize.Z, ifelse(n <= 500, 22,
+                                                                          ifelse(!is.na(use.hal), 10, 15))))
 
-                if (is.na(use.hal)) {
-                    no.cores <- 30
-                }
+                track_m <- function(m) paste0("./output/",
+                                              paste0("m=",m,
+                                                     ", sim.setting=", sim.setting,
+                                                     ", cens.percentage=", cens.percentage,
+                                                     ", use.hal=", use.hal,
+                                                     ", misspecify.T=", misspecify.T, 
+                                                     ", misspecify.C=", misspecify.C, 
+                                                     ", btmle=", btmle), ".txt")
+
+                tw <- ceiling(M / 25)
 
                 registerDoParallel(no.cores)
 
                 est.list <- foreach(m=1:M, .errorhandling="pass"
-                                    ) %dopar% {
+                                    ) %dopar%  {
 
                                         print(paste0("m = ", m))
                                         set.seed(100+m)
                                         dt <- sim.data.outer(n = n, sim.setting = sim.setting, cens.percentage = cens.percentage)
                                         print(summary(dt))
 
+                                        if (M >= tw & m %% floor(M / tw) == 0) {
+                                            write.csv(m, file=track_m(m))
+                                            if (file.exists(track_m(m-floor(M / tw)))) {
+                                                file.remove(track_m(m-floor(M / tw)))
+                                            }
+                                        }
+
                                         #--- use HAL ---#
                                         if (!is.na(use.hal)) {
-                                            return(list(
-                                                tmle.est = tmle.est.fun(dt, intervention.A = intervention.A,
-                                                                        verbose = verbose,
-                                                                        cv.glmnet = FALSE,
-                                                                        fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L2+L1+L3+Y.dummy",
-                                                                                         fit = "hal"),
-                                                                        fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy",
-                                                                                         fit = "hal"),
-                                                                        fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.dummy",
-                                                                                         fit = "hal"),
-                                                                        cut.time.varying = 4,
-                                                                        cut.two.way = 0,
-                                                                        cut.time.treatment = 0,
-                                                                        cut.time = 35)
-                                            ))
+
+                                            if (!is.na(btmle)) {
+                                                if (btmle) {
+                                                    return(list(
+                                                        baseline.tmle = tmle.est.fun(dt, intervention.A = intervention.A,
+                                                                                     verbose = verbose,
+                                                                                     cv.glmnet = FALSE,
+                                                                                     fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L2+L1+L3",
+                                                                                                      fit = "hal"),
+                                                                                     fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3",
+                                                                                                      fit = "hal"),
+                                                                                     fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3",
+                                                                                                      fit = "cox"),
+                                                                                     cut.time.varying = 4,
+                                                                                     parallelize.Z = parallelize.Z,
+                                                                                     baseline.tmle = TRUE,
+                                                                                     cut.one.way = 30,
+                                                                                     #output.lambda.cvs = TRUE,
+                                                                                     cut.two.way = 0,
+                                                                                     cut.time = 35)
+                                                    ))
+                                                }
+                                            } else {
+
+                                                return(list(
+                                                    tmle.est = tmle.est.fun(dt, intervention.A = intervention.A,
+                                                                            verbose = verbose,
+                                                                            cv.glmnet = FALSE,
+                                                                            fit.type1 = list(model = "Surv(tstart, tstop, delta == 1)~A+L2+L1+L3+Y.1",
+                                                                                             fit = "hal"),
+                                                                            fit.type2 = list(model = "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.1",
+                                                                                             fit = "hal"),
+                                                                            fit.type0 = list(model = "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.1",
+                                                                                             fit = "hal"),
+                                                                            parallelize.Z = parallelize.Z,
+                                                                            use.exponential = use.exponential,
+                                                                            cv.hal.fit = cv.hal.fit,
+                                                                            V = V,
+                                                                            event.dependent.cv = event.dependent.cv,
+                                                                            reduce.seed.dependence = reduce.seed.dependence,
+                                                                            cut.time.varying = cut.time.varying,
+                                                                            cut.one.way = cut.one.way,
+                                                                            cut.two.way = cut.two.way,
+                                                                            cut.time = cut.time)
+                                                ))
+                                            }
                                         }
                                     
                                         #--- use Cox ---#
@@ -186,6 +334,18 @@ for (intervention.A in c(1)) {
                                             fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3+Y.dummy"
                                             fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy"
                                             fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3"
+                                        } else if (substr(sim.setting, 1, 1) == "5") {
+                                            fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3+Y.dummy+Y.dummy:L2"
+                                            fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy"
+                                            fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.dummy+Y.dummy:L2"
+                                        } else if (substr(sim.setting, 1, 1) %in% c("6", "7")) {
+                                            fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3+Y.dummy"
+                                            fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy"
+                                            if (((substr(sim.setting, 2, 2) == "B" & substr(sim.setting, 1, 1) %in% c("6")) | (substr(sim.setting, 2, 2) == "A" & substr(sim.setting, 1, 1) %in% c("7"))) & !misspecify.C) {
+                                                fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.dummy"
+                                            } else {
+                                                fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3"
+                                            }
                                         } else if (substr(sim.setting, 1, 1) == "3") {
                                             fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3"
                                             fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3"
@@ -197,43 +357,66 @@ for (intervention.A in c(1)) {
                                         }
 
                                         if (misspecify.T == 2) {
-                                            fit.type1.model <- gsub("\\+Y.dummy.3", "", fit.type1.model)
+                                            if (substr(sim.setting, 1, 1) == "4") {
+                                                fit.type1.model <- gsub("\\+Y.dummy.3", "", fit.type1.model)
+                                            } else if (substr(sim.setting, 1, 1) == "5") {
+                                                fit.type1.model <- gsub("\\+Y.dummy:L2", "", fit.type1.model)
+                                            } else {
+                                                fit.type1.model <- gsub("\\+Y.dummy", "", fit.type1.model)
+                                            }
                                         } else if (misspecify.T) {
-                                            if (!substr(sim.setting, 2, 2) == "A") {
+                                            if (!substr(sim.setting, 2, 2) == "A" & substr(sim.setting, 1, 1) %in% c("1", "2", "3")) {
                                                 next
                                             }
                                             fit.type1.model <- gsub("L1.squared", "L1", fit.type1.model)
+                                        }
+
+                                        if (misspecify.C == 2) {
+                                            if (substr(sim.setting, 1, 1) == "5") {
+                                                fit.type0.model <- gsub("\\+Y.dummy:L2", "", fit.type0.model)
+                                            } else {
+                                                fit.type0.model <- gsub("\\+Y.dummy.3", "", fit.type0.model)
+                                            }
                                         } else if (misspecify.C) {
-                                            if (!substr(sim.setting, 1, 1) == "1") {
+                                            if (substr(sim.setting, 1, 1) %in% c("2", "3")) {
                                                 next
                                             } else {
                                                 fit.type0.model <- gsub("\\+Y.dummy", "", fit.type0.model)
                                             }
                                         }
-                                    
+
+                                        message("---------------------------------")
+                                        print(fit.type0.model)
+                                        message("---------------------------------")
+                                        print(fit.type1.model)
+                                        message("---------------------------------")
+                                        print(fit.type2.model)
+                                        message("---------------------------------")
+
                                         return(list(
                                             tmle.est = tmle.est.fun(dt, intervention.A = intervention.A,
                                                                     verbose = verbose,
                                                                     fit.type1 = list(model = fit.type1.model, fit = "cox"),
                                                                     fit.type2 = list(model = fit.type2.model, fit = "cox"),
-                                                                    fit.type0 = list(model = fit.type0.model, fit = "cox")),
+                                                                    fit.type0 = list(model = fit.type0.model, fit = "cox"),
+                                                                    parallelize.Z = parallelize.Z),
                                             baseline.tmle = tmle.est.fun(dt, intervention.A = intervention.A,
                                                                          verbose = verbose,
                                                                          baseline.tmle = TRUE,
-                                                                         fit.type1 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy.3", "", fit.type1.model)), fit = "cox"),
-                                                                         fit.type2 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy.3", "", fit.type2.model)), fit = "cox"),
-                                                                         fit.type0 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy.3", "", fit.type0.model)), fit = "cox")),
+                                                                         fit.type1 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy:L2", "", gsub("\\+Y.dummy.3", "", fit.type1.model))), fit = "cox"),
+                                                                         fit.type2 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy:L2", "", gsub("\\+Y.dummy.3", "", fit.type2.model))), fit = "cox"),
+                                                                         fit.type0 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy:L2", "", gsub("\\+Y.dummy.3", "", fit.type0.model))), fit = "cox")),
                                             standard.np = tmle.est.fun(dt, intervention.A = intervention.A,
                                                                        verbose = verbose,
                                                                        standard.np = TRUE),
                                             naive1 = tmle.est.fun(dt, intervention.A = intervention.A,
                                                                   verbose = verbose,
                                                                   naive.gcomp = TRUE,
-                                                                  fit.type1 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy", "", gsub("\\+Y.dummy.3", "", fit.type1.model))), fit = "cox")),
+                                                                  fit.type1 = list(model = gsub("\\+Y.dummy", "", gsub("\\+Y.dummy:L2", "", gsub("\\+Y.dummy.3", "", fit.type1.model))), fit = "cox")),
                                             naive2 = tmle.est.fun(dt, intervention.A = intervention.A,
                                                                   verbose = verbose,
                                                                   naive.gcomp = TRUE,
-                                                                  fit.type1 = list(model = paste0(gsub("\\+Y.dummy", "", gsub("\\+Y.dummy.3", "", fit.type1.model)), "+Y.dummy"), fit = "cox"))
+                                                                  fit.type1 = list(model = gsub("\\+Y.dummy", "", paste0(gsub("\\+Y.dummy:L2", "", gsub("\\+Y.dummy.3", "", fit.type1.model))), "+Y.dummy"), fit = "cox"))
                                         ))
                                     }
 
@@ -250,9 +433,14 @@ for (intervention.A in c(1)) {
                                     "-cens.percentage.", cens.percentage,
                                     ifelse(!is.na(use.hal), ifelse(use.hal >= 2, paste0("-useHAL", use.hal), "-useHAL"), ""),
                                     ifelse(!is.na(btmle), ifelse(btmle, "-btmle", ""), ""),
-                                    ifelse(misspecify.T, "-misspecify.T", ""),
-                                    ifelse(misspecify.C, "-misspecify.C", ""),
+                                    ifelse(misspecify.T, ifelse(misspecify.T == 2, "-misspecify2.T", "-misspecify.T"), ""),
+                                    ifelse(misspecify.C, ifelse(misspecify.C == 2, "-misspecify2.C", "-misspecify.C"), ""),
                                     ".rds"))
+
+                if (file.exists(track_m(M))) {
+                    file.remove(track_m(M))
+                }
+                
 
                 if (M <= 5) print(est.list)
                 

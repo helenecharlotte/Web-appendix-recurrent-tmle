@@ -946,13 +946,13 @@ est.hal.0[[1]]["tmle.est"] + 1.96*c(-1,1)*est.hal.0[[1]]["tmle.se"]
 
 (est.diff <- est.hal.1[[1]][["tmle.est"]] - est.hal.0[[1]][["tmle.est"]])
 (se.diff.eic <- sqrt(mean((est.hal.1$eic - est.hal.0$eic)^2)/length(unique(dt.readm[["id"]]))))
-est.diff + c(-1,1)*1.96*se.diff.eic
+est.diff + c(-1,1)*1.96*se.diff.eic 
 
 est.diff*length(unique(dt.readm[["id"]]))
 (est.diff + c(-1,1)*1.96*se.diff.eic)*length(unique(dt.readm[["id"]]))
 #+END_SRC 
 
-#+RESULTS[(2025-12-15 20:57:33) 0130384357d80cc9b4fc417e93f089461a50c2ab]:
+#+RESULTS[(2025-12-15 20:58:43) 9384e336237f0f9719ce7a7138bbd30b7f33d5c2]:
 #+begin_example
             g.est          tmle.est           tmle.se positivity.issues 
         1.0757287         1.1292693         0.1630155         0.0000000

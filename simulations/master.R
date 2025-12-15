@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: Nov 12 2024 (15:29) 
 ## Version: 
-## Last-Updated: Dec 11 2025 (19:55) 
+## Last-Updated: Dec 15 2025 (19:19) 
 ##           By: Helene
-##     Update #: 17
+##     Update #: 28
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -15,13 +15,6 @@
 ## 
 ### Code:
 
-
-if (system("echo $USER",intern=TRUE)%in%c("jhl781")){
-    setwd("//projects/biostat01/people/jhl781/research/TMLE-from-2020june/targeted-max-likelihood/Web-appendix-recurrent-tmle/")
-    .libPaths( c( .libPaths(), "//projects/biostat01/people/jhl781/tmp"))
-} else {
-    setwd("~/research/TMLE-from-2020june/targeted-max-likelihood/Web-appendix-recurrent-tmle/")
-}
 
 library(hdnom)
 library(MASS)
@@ -45,27 +38,58 @@ library(rlist)
 #-------------------------------------------------------------------------------------------#
 ## source relevant scripts
 #-------------------------------------------------------------------------------------------#
+    
+source("./R/tmle.estimation.fun.R")
+source("./R/sim.data.recurrent.R")
+source("./R/lebesgue.loss.fun.R")
+source("./R/cv.fun.R")     
+source("./R/basis.fun.R")
+source("./R/fit.hal.R")
+source("./R/predict.hal.R")
 
-if (FALSE) {
+#-------------------------------------------------------------------------------------------#
+## get true values, amount of censoring, etc
+#-------------------------------------------------------------------------------------------#
 
-    source("./backup/dec-5-25/R/tmle.estimation.fun.R")
-    source("./backup/dec-5-25/R/sim.data.recurrent.R")
-    source("./backup/dec-5-25/R/lebesgue.loss.fun.R")
-    source("./backup/dec-5-25/R/cv.fun.R")     
-    source("./backup/dec-5-25/R/basis.fun.R")
-    source("./backup/dec-5-25/R/fit.hal.R")
-    source("./backup/dec-5-25/R/predict.hal.R")
-    
-} else {
-    
-    source("./R/tmle.estimation.fun.R")
-    source("./R/sim.data.recurrent.R")
-    source("./R/lebesgue.loss.fun.R")
-    source("./R/cv.fun.R")     
-    source("./R/basis.fun.R")
-    source("./R/fit.hal.R")
-    source("./R/predict.hal.R")
-    
+
+for (intervention.A in c(1,0)) {
+    for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
+        true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, intervention.A = intervention.A, rep.true = 50)
+        saveRDS(true.psi,
+                file=paste0("./output/",
+                            "save-true-psi-A",
+                            intervention.A,
+                            "-recurrent", 
+                            "-sim.setting.", sim.setting,
+                            ".rds"))
+    }
+}
+
+for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
+    for (cens.percentage in c("low", "high", "10%", "30%")) {
+        print(paste0("sim.setting ", sim.setting, ": ",
+                     cens.fraction <- sim.data.outer(sim.setting = sim.setting,
+                                                     cens.percentage = cens.percentage,
+                                                     n = 1e5,
+                                                     get.cens.fraction = TRUE)*100, "%"))
+        saveRDS(cens.fraction,
+                file=paste0("./output/",
+                            "save-cens-fraction",
+                            "-recurrent", 
+                            "-sim.setting.", sim.setting,
+                            "-cens.percentage.", cens.percentage,
+                            ".rds"))
+    }
+}
+
+for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
+    true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, censoring = FALSE, rep.true = 50)
+    saveRDS(true.psi,
+            file=paste0("./output/",
+                        "save-true-psi-no-cens",
+                        "-recurrent", 
+                        "-sim.setting.", sim.setting,
+                        ".rds"))
 }
 
 #-------------------------------------------------------------------------------------------#
@@ -77,57 +101,6 @@ M <- 1000
 
 verbose <- TRUE
 
-get.truth <- FALSE
-get.uncensored.truth <- FALSE
-get.cens.fraction <- FALSE
-
-if (get.truth) {
-    for (intervention.A in c(1,0)) {
-        for (sim.setting in c("7B")) { #c("1A", "1B", "2A", "2B", "3A")
-            true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, intervention.A = intervention.A, rep.true = 50)
-            saveRDS(true.psi,
-                    file=paste0("./output/",
-                                "save-true-psi-A",
-                                intervention.A,
-                                "-recurrent", 
-                                "-sim.setting.", sim.setting,
-                                ".rds"))
-        }
-    }
-}
-
-if (get.uncensored.truth) {
-    for (sim.setting in c("5C")) { #c("1A", "1B", "2A", "2B", "3A")
-        true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, censoring = FALSE, rep.true = 50)
-        saveRDS(true.psi,
-                file=paste0("./output/",
-                            "save-true-psi-no-cens",
-                            "-recurrent", 
-                            "-sim.setting.", sim.setting,
-                            ".rds"))
-    }
-}
-
-if (get.cens.fraction) {
-    for (sim.setting in c("7B")) { #c("1A", "1B", "2A", "2B", "3A")
-        for (cens.percentage in c("low", "high", "10%", "30%")) {
-            print(paste0("sim.setting ", sim.setting, ": ",
-                         cens.fraction <- sim.data.outer(sim.setting = sim.setting,
-                                                         cens.percentage = cens.percentage,
-                                                         n = 1e5,
-                                                         get.cens.fraction = TRUE)*100, "%"))
-            saveRDS(cens.fraction,
-                    file=paste0("./output/",
-                                "save-cens-fraction",
-                                "-recurrent", 
-                                "-sim.setting.", sim.setting,
-                                "-cens.percentage.", cens.percentage,
-                                ".rds"))
-        }
-    }
-}
-
-
 #-------------------------------------------------------------------------------------------#
 ## loop over simulation repetitions
 #-------------------------------------------------------------------------------------------#
@@ -136,11 +109,19 @@ for (intervention.A in c(1)) {
 
     #--- simulation setting ---#
     for (sim.list in list(
-                         list(sim.setting = "4A",
+                         list(sim.setting = "4A", ## <-- setting 1
                               misspecify.list = list(
                                   c(misspecify.T = FALSE, misspecify.C = FALSE),
                                   c(misspecify.T = TRUE, misspecify.C = FALSE),
-                                  c(misspecify.T = 2, misspecify.C = 2)
+                                  c(misspecify.T = 2, misspecify.C = 2),
+                                  c(use.hal = "no-interaction-3")
+                              )),
+                         list(sim.setting = "7A", ## <-- setting 2
+                              misspecify.list = list(
+                                  c(misspecify.T = FALSE, misspecify.C = FALSE),
+                                  c(misspecify.T = 2, misspecify.C = TRUE),
+                                  c(misspecify.T = FALSE, misspecify.C = TRUE),
+                                  c(use.hal = "no-interaction-8")
                               ))
                      )) {
  
@@ -338,10 +319,10 @@ for (intervention.A in c(1)) {
                                             fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3+Y.dummy+Y.dummy:L2"
                                             fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy"
                                             fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.dummy+Y.dummy:L2"
-                                        } else if (substr(sim.setting, 1, 1) %in% c("6", "7")) {
+                                        } else if (substr(sim.setting, 1, 1) %in% c("6", "7", "8")) {
                                             fit.type1.model <- "Surv(tstart, tstop, delta == 1)~A+L2+L1.squared+L3+Y.dummy"
                                             fit.type2.model <- "Surv(tstart, tstop, delta == 2)~A+L2+L1+L3+Y.dummy"
-                                            if (((substr(sim.setting, 2, 2) == "B" & substr(sim.setting, 1, 1) %in% c("6")) | (substr(sim.setting, 2, 2) == "A" & substr(sim.setting, 1, 1) %in% c("7"))) & !misspecify.C) {
+                                            if (((substr(sim.setting, 2, 2) == "B" & substr(sim.setting, 1, 1) %in% c("6")) | (substr(sim.setting, 2, 2) == "A" & substr(sim.setting, 1, 1) %in% c("7", "8"))) & !misspecify.C) {
                                                 fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3+Y.dummy"
                                             } else {
                                                 fit.type0.model <- "Surv(tstart, tstop, delta == 0)~A+L2+L1+L3"

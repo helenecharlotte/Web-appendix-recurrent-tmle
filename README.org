@@ -5,6 +5,16 @@ This is the web appendix to our manuscript entitled /Nonparametric/
 /number of recurrent events with continuous-time targeted maximum/
 /likelihood and highly adaptive lasso estimation/. \\
 
+** Overview
+
+This README is structured as follows:
+
+- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Dependencies]]
+- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Sourcing relevant scripts]]
+- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Simulating recurrent events data]]
+- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Estimation on simulated data]]
+- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Code for data analysis]]
+
 ** Dependencies
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
@@ -921,9 +931,9 @@ est.hal.0 <-
 *** Results
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}
-#+BEGIN_SRC R  :results none :exports both  :session *R* :cache yes  
-est.btmle.1
-est.btmle.0
+#+BEGIN_SRC R  :results output :exports both  :session *R* :cache yes  
+est.btmle.1 
+est.btmle.0 
 
 est.np.1
 est.np.0
@@ -941,3 +951,26 @@ est.diff + c(-1,1)*1.96*se.diff.eic
 est.diff*length(unique(dt.readm[["id"]]))
 (est.diff + c(-1,1)*1.96*se.diff.eic)*length(unique(dt.readm[["id"]]))
 #+END_SRC 
+
+#+RESULTS[(2025-12-15 20:57:33) 0130384357d80cc9b4fc417e93f089461a50c2ab]:
+#+begin_example
+            g.est          tmle.est           tmle.se positivity.issues 
+        1.0757287         1.1292693         0.1630155         0.0000000
+            g.est          tmle.est           tmle.se positivity.issues 
+         1.662112          1.662112          0.203892          0.000000
+  np.est    np.se 
+1.084279 0.138539
+  np.est    np.se 
+1.699259 0.209306
+            g.est          tmle.est           tmle.se positivity.issues 
+        1.1077582         1.1927196         0.1979493         0.0000000
+            g.est          tmle.est           tmle.se positivity.issues 
+        1.8497345         1.7700454         0.2036211         0.0000000
+[1] 0.804739 1.580700
+[1] 1.370948 2.169143
+[1] -0.5773258
+[1] 0.2826094
+[1] -1.13124027 -0.02341135
+[1] -232.6623
+[1] -455.889828   -9.434773
+#+end_example

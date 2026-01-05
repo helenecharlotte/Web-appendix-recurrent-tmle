@@ -1,19 +1,6 @@
 ### predict.hal.R --- 
 #----------------------------------------------------------------------
-## Author: Helene
-## Created: Oct 15 2024 (09:34) 
-## Version: 
-## Last-Updated: Dec  8 2025 (13:29) 
-##           By: Helene
-##     Update #: 270
-#----------------------------------------------------------------------
-## 
-### Commentary: 
-## 
-### Change Log:
-#----------------------------------------------------------------------
-## 
-### Code:
+
 
 predict.hal <- function(seed = NULL, #13349,
                         fit.hals, ## output from fit.hal
@@ -54,7 +41,7 @@ predict.hal <- function(seed = NULL, #13349,
         print("--------------------------------------------")
         print(history.main.Y)
     }
-    # history.Y[!history.Y%in%grep(":", history.Y, value = TRUE)]
+
     if (length(depend.Y)>0) {
         max.Y <- max(as.numeric(gsub("Y.1 >= ", "", gsub("TRUE|FALSE", "", history.main.Y))))
         history.Y <- depend.Y <- depend.Y.all <- c(paste0("Y.1 >= ", 1:max.Y, "TRUE"),

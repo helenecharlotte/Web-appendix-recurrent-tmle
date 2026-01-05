@@ -1,19 +1,6 @@
 ### sim.data.recurrent.R --- 
 #----------------------------------------------------------------------
-## Author: Helene
-## Created: Oct  2 2024 (14:47) 
-## Version: 
-## Last-Updated: Dec 11 2025 (19:43) 
-##           By: Helene
-##     Update #: 400
-#----------------------------------------------------------------------
-## 
-### Commentary: 
-## 
-### Change Log:
-#----------------------------------------------------------------------
-## 
-### Code:
+
 
 sim.data.outer <- function(n = 200,
                            intervention.A = NULL, censoring = TRUE,
@@ -23,6 +10,7 @@ sim.data.outer <- function(n = 200,
                            rep.true = 10,
                            get.cens.fraction = FALSE,
                            verbose = FALSE,
+                           return.U = FALSE,
                            seed = NULL) {
 
     if (length(intervention.A) == 0) {
@@ -34,7 +22,8 @@ sim.data.outer <- function(n = 200,
                              censoring = censoring,
                              sim.setting = sim.setting,
                              cens.percentage = cens.percentage,
-                             verbose = verbose)
+                             verbose = verbose,
+                             return.U = return.U)
             })
             out.true.1 <- out.true[[1]]
             print(cumsum(sapply(out.true, function(x) x[1, 2]))/(1:rep.true))
@@ -49,6 +38,7 @@ sim.data.outer <- function(n = 200,
                                    sim.setting = sim.setting,
                                    cens.percentage = cens.percentage,
                                    verbose = verbose,
+                                   return.U = return.U,
                                    seed = seed)
             sim.dt[, end.time := max(time), by = "id"]
             return(sim.dt[time == end.time, mean(delta == 0 & time <= tau)])
@@ -59,6 +49,7 @@ sim.data.outer <- function(n = 200,
                                 sim.setting = sim.setting,
                                 cens.percentage = cens.percentage,
                                 verbose = verbose,
+                                return.U = return.U,
                                 seed = seed))
         }
     } else {
@@ -68,6 +59,7 @@ sim.data.outer <- function(n = 200,
                          intervention.A = intervention.A,
                          sim.setting = sim.setting,
                          cens.percentage = cens.percentage,
+                         return.U = return.U,
                          verbose = verbose)
         })
         out.true.1 <- out.true[[1]]
@@ -93,7 +85,8 @@ sim.data.fun <- function(n = 200,
                          rep.true = 10,
                          get.cens.fraction = FALSE,
                          seed = sample(1e9, 1),
-                         verbose = FALSE) {
+                         verbose = FALSE,
+                         return.U = FALSE) {
 
     if (length(intervention.A)>0) {
         censoring <- FALSE
@@ -509,6 +502,62 @@ sim.data.fun <- function(n = 200,
 
         randomize.A <- TRUE
 
+    } else if (sim.setting == "8A") { ## censoring dependent on Ny
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.9
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.7
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -0.5
+        } else {
+            alpha.C <- 0.1
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0.7
+        
+        alpha.T <- 1.75
+        alpha.T2 <- 0
+
+        betaT.A <- -1.2
+        betaT2.A <- -0.4
+       
+        betaC.k <- -1.8
+
+        betaT.U <- 0.8
+
+        randomize.A <- FALSE
+
+    } else if (sim.setting == "8B") { ## independent censoring 
+
+        if (cens.percentage == "low") {
+            alpha.C <- -0.9
+        } else if (cens.percentage == "10%") {
+            alpha.C <- -1.7
+        } else if (cens.percentage == "30%")  {
+            alpha.C <- -0.1
+        } else {
+            alpha.C <- -0.2
+        }
+
+        betaT.k <- 0
+        betaT2.k <- 0.7
+        
+        alpha.T <- 1.75
+        alpha.T2 <- 0
+
+        betaT.A <- -1.2
+        betaT2.A <- -0.4
+       
+        betaC.k <- 0
+
+        betaC.L3 <- betaC.L1 <- betaC.A <- 0
+
+        betaT.U <- 0.8
+
+        randomize.A <- FALSE
+
     }
 
     if (verbose) {
@@ -544,17 +593,21 @@ sim.data.fun <- function(n = 200,
         U <- rgamma(n, 1/2, 1/betaT.U/4)
         if (verbose) print(mean(U))
         if (verbose) print(sd(U))
+    } else if (substr(sim.setting, 1, 1) %in% c("8")) {
+        U <- rgamma(n, betaT.U, betaT.U)
+        if (verbose) print(mean(U))
+        if (verbose) print(sd(U))
     } else {
         U <- 1
     }
 
-    if (substr(sim.setting, 1, 1) %in% c("5", "7")) { 
+    if (substr(sim.setting, 1, 1) %in% c("5", "7", "8")) { 
         L2 <- rbinom(n, 1, 0.5)
     } else {
         L2 <- runif(n, 0, 1)
     }
 
-    if (substr(sim.setting, 1, 1) %in% c("7")) {
+    if (substr(sim.setting, 1, 1) %in% c("7", "8")) {
         L1 <- rbinom(n, 2, 0.5)/4
     } else {
         L1 <- runif(n, -1, 1)
@@ -689,6 +742,7 @@ sim.data.fun <- function(n = 200,
     dt <- dt[(idN==1 & Y == 1) | (Y == 0)][, -c("idN", "Y"), with=FALSE][time>0]
 
     baseline <- data.table(A=A, L1=L1, L2=L2, L3=L3, id=as.numeric(1:n))
+    if (return.U) baseline[, U := U]
     setkey(baseline, id); setkey(dt, id)
     dt <- merge(dt, baseline, by="id")
 

@@ -19,7 +19,7 @@ lebesgue.loss.fun <- function(train.fit,
     tmp[id %in% test.set, dN:=1*ddd]
 
     return(tmp[id %in% test.set, -sum(log(fit.lambda)*dN - fit.dLambda)] / length(test.set))
-}
+} 
 
 ######################################################################
 ### lebesgue.loss.fun.R ends here

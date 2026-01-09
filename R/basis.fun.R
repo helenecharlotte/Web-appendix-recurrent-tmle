@@ -137,14 +137,7 @@ basis.fun <- function(pseudo.dt, ## tmp3,
     
     if (length(time.var)>0) {
         if (!predict) {
-            ##x.vector <- apply(X, 1, function(x) paste0(x, collapse=","))
-            #browser()
-            #profvis::profvis({
-            #    x.vector <- apply(X, 1, paste, collapse = "")
-            #})
-            #profvis::profvis({
             x.vector <- hash_sparse_rows_dgC(X)
-            #})
             hal.pseudo.dt[, x:=x.vector]
         }
         return(list(X=X, hal.pseudo.dt=hal.pseudo.dt))

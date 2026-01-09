@@ -132,8 +132,6 @@ predict.hal <- function(seed = NULL, #13349,
                      data=pseudo.dt[,
                      (treatment) := get(treatment.prediction)]), sparse=TRUE) 
 
-    ## pseudo.dt[, risk.time := diff(c(get(time.var), max.time[.N])), by = by.vars1]
-
     if (browse2) browser()
 
     if (length(history.Y) == 0) {

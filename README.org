@@ -34,6 +34,7 @@ library(stringr)
 library(glmnet)
 library(Matrix)
 library(rlist)
+library(digest)
 #+END_SRC 
 
 ** Source relevant scripts

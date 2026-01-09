@@ -18,8 +18,6 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
 
     if (length(seed)>0) set.seed(seed)
 
-    ## print(paste0("seed = ", seed))
-
     if (browse) browser()
 
     #-- split sample: 
@@ -39,12 +37,8 @@ cv.fun <- function(loss.fun = lebesgue.loss.fun,
         sample.events[, random.row := sample(1:nrow(sample.events), nrow(sample.events))]
         sample.events <- sample.events[order(id.unique, random.row)]
 
-        sampV <- rep(sample(1:V, V), length = nrow(sample.events)) ##unlist(lapply(1:ceiling(nrow(sample.events)/V), function(vv) sample(1:V, V)))[1:nrow(sample.events)]
+        sampV <- rep(sample(1:V, V), length = nrow(sample.events))
         sample.events[, cv := sampV]
-       
-        ## for (jj in sample.events[, unique(id.unique)]) {
-        ##     sample.events[id.unique == jj, cv := sample(rep(sample(1:V, V), length = nrow(sample.events[id.unique == jj])), size = nrow(sample.events[id.unique == jj]))]
-        ## }
 
         if (verbose&FALSE) {
             print(sample.events[, table(cv)])

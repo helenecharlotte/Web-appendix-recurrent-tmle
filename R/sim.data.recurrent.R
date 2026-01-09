@@ -582,7 +582,6 @@ sim.data.fun <- function(n = 200,
 
     }
 
-    ##U <- runif(n, -1, 1)
     if (length(seed)>0) set.seed(seed)
 
     if (substr(sim.setting, 1, 1) %in% c("6")) {

@@ -48,7 +48,6 @@ fit.hal <- function(seed = NULL,#13349,
     offset2 <- tmp.dt[RT>0, log(RT)]
     X2.hal <- unique.matrix(X.hal)[tmp.dt$RT>0,]
 
-    ##browser()
     #-- fit glmnet: 
     if (cv.glmnet) {
         

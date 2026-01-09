@@ -398,14 +398,10 @@ tmle.est.fun <- function(dt,
                 tmp.hal[, (paste0("ddd.", delta.value)) := sum((time<=final.time)*(delta==delta.value)), by = by.vars]
             }
 
-            ## tmp.hal[, risk.time := sum(time - tstart), by = by.vars]
             tmp.hal[time <= final.time, risk.time := sum(time - tstart), by = by.vars]
         }
 
         tmp.hal.reduced <- unique(tmp.hal[time<=final.time], by=by.vars)
-
-        ## tmp.hal.reduced[grid.time == 0, time:=0]
-        ## tmp.hal.reduced[, risk.time := diff(c(time, final.time[.N])), by = "id"]
 
         hal.formula.main <- paste0("delta ~ -1 + Aobs + ",
                                    paste0("(grid.time >=", grid.times, ")", collapse = "+"),
@@ -443,8 +439,6 @@ tmle.est.fun <- function(dt,
         if (browse.hal) browser()
 
         if (length(seed.hal) == 0) seed.hal <- sample(1e8, 1)
-
-        ## print(paste0("seed.hal = ", seed.hal))
 
         fit.hals <- lapply(c(1,2,0)[any.hal], function(delta.value) {
            
@@ -672,13 +666,10 @@ tmle.est.fun <- function(dt,
 
                 for (kY in index.j) {
                     tmp.hal[Y.1 >= kY-1, (paste0("P", delta.value)) := get(paste0("P", delta.value, ".Y", kY))]
-                    ##tmp.hal[which.Y == kY, (paste0("P", delta.value)) := get(paste0("P", delta.value, ".Y", kY))]
                 }
 
                 tmp.hal[, (paste0("surv", delta.value)) := exp(-cumsum(get((paste0("P", delta.value))))), by = "id"]
-                #tmp.hal[, (paste0("surv", delta.value, ".1")) := exp(-cumsum(get((paste0("P", delta.value))))), by = "id"]
                 tmp.hal[, (paste0("surv", delta.value, ".1")) := c(1,get(paste0("surv", delta.value))[-.N]), by = "id"]
-                #tmp.hal[, (paste0("surv", delta.value, ".1.test2")) := get(paste0("surv", delta.value, ".1")), by = "id"]
 
                 tmp3 <- merge(tmp3[, !(names(tmp3) %in% c(paste0("P", delta.value), paste0("P", delta.value, ".Y", index.j), paste0("surv", delta.value), paste0("surv", delta.value, ".1"))), with = FALSE],
                               tmp.hal[, names(tmp.hal) %in% c("time", "id", paste0("P", delta.value), paste0("P", delta.value, ".Y", index.j), paste0("surv", delta.value), paste0("surv", delta.value, ".1")), with = FALSE], by = c("id", "time"))
@@ -773,9 +764,8 @@ tmle.est.fun <- function(dt,
 
     #--------------------------------    
     #-- "general" version of TMLE:
-    # browser()
+
     # Number of Y-history states
-    ### browser()
     if (any(any.hal)) {
         index.j <- sort(as.numeric(gsub("P1.Y", "", names(tmp.hal)[substr(names(tmp.hal),1,4) == "P1.Y"])))
     } else {
@@ -814,8 +804,6 @@ tmle.est.fun <- function(dt,
     states <- 1:K
     
     if (browse3) browser()
-
-    ## browser()
 
     for (iter in 1:max.iter) {
 
@@ -974,7 +962,6 @@ compute_Z_and_clever_per_id <- function(dt_id,
         P1_vec <- as.numeric(P1_mat[tt, ])
         P2_vec <- as.numeric(P2_mat[tt, ])
         
-        ## Z_t <- (1-P1_vec)*(1-P2_vec) * Z_next + P1_vec*(1-P2_vec) * Z_next_j1 + (1-P2_vec)*P1_vec
         Z_t <- (1-P1_vec-P2_vec) * Z_next + P1_vec * Z_next_j1 + P1_vec
         
         Z_by_time[[tt]] <- Z_t
@@ -1027,6 +1014,9 @@ compute_Z_and_clever_per_id <- function(dt_id,
 
 ######################################################################
 ### tmle.estimation.fun.R ends here
+
+######################################################################
+### faster version to get unique rows: 
 
 library(digest)
 

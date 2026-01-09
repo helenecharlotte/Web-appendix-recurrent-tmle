@@ -16,14 +16,6 @@ This README is structured as follows:
 - Reproducing the real data analysis results
 
 
-*** Computational note
-
-Full reproduction of the simulation study reported in the manuscript
-involves a large number of repetitions and may require many hours on a
-standard desktop machine. The examples below illustrate usage of the
-simulation and estimation functions on single datasets or reduced
-settings.
-
 ** Dependencies
 
 #+ATTR_LATEX: :options otherkeywords={}, deletekeywords={}

@@ -9,11 +9,20 @@ This is the web appendix to our manuscript entitled /Nonparametric/
 
 This README is structured as follows:
 
-- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Dependencies]]
-- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Sourcing relevant scripts]]
-- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Simulating recurrent events data]]
-- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Estimation on simulated data]]
-- [[https://github.com/helenecharlotte/Web-appendix-recurrent-tmle?tab=readme-ov-file#dependencies][Code for data analysis]]
+- Dependencies
+- Sourcing relevant scripts
+- Simulation recurrent events data
+- Estimation on simulated data
+- Reproducing the real data analysis results
+
+
+*** Computational note
+
+Full reproduction of the simulation study reported in the manuscript
+involves a large number of repetitions and may require many hours on a
+standard desktop machine. The examples below illustrate usage of the
+simulation and estimation functions on single datasets or reduced
+settings.
 
 ** Dependencies
 
@@ -805,7 +814,7 @@ Warning message:
 from glmnet C++ code (error code -27); Convergence for 27th lambda value not reached after maxit=100000 iterations; solutions for larger lambdas returned
 #+end_example
 
-** Code for data analysis
+** Reproducing the real data analysis results
 
 *** Data preparation
 

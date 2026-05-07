@@ -41,7 +41,7 @@ for (intervention.A in c(1,0)) {
     for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
         true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, intervention.A = intervention.A, rep.true = 50)
         saveRDS(true.psi,
-                file=paste0("./output/",
+                file=paste0("./saved_output/",
                             "save-true-psi-A",
                             intervention.A,
                             "-recurrent", 
@@ -58,7 +58,7 @@ for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
                                                      n = 1e5,
                                                      get.cens.fraction = TRUE)*100, "%"))
         saveRDS(cens.fraction,
-                file=paste0("./output/",
+                file=paste0("./saved_output/",
                             "save-cens-fraction",
                             "-recurrent", 
                             "-sim.setting.", sim.setting,
@@ -70,7 +70,7 @@ for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
 for (sim.setting in c("8A")) { #c("1A", "1B", "2A", "2B", "3A")
     true.psi <- sim.data.outer(sim.setting = sim.setting, n = 1e4, censoring = FALSE, rep.true = 50)
     saveRDS(true.psi,
-            file=paste0("./output/",
+            file=paste0("./saved_output/",
                         "save-true-psi-no-cens",
                         "-recurrent", 
                         "-sim.setting.", sim.setting,
@@ -212,7 +212,7 @@ for (intervention.A in c(1)) {
                 no.cores <- floor(min(detectCores()/parallelize.Z, ifelse(n <= 500, 22,
                                                                           ifelse(!is.na(use.hal), 10, 15))))
 
-                track_m <- function(m) paste0("./output/",
+                track_m <- function(m) paste0("./saved_output/",
                                               paste0("m=",m,
                                                      ", sim.setting=", sim.setting,
                                                      ", cens.percentage=", cens.percentage,
@@ -390,7 +390,7 @@ for (intervention.A in c(1)) {
                 stopImplicitCluster()
 
                 saveRDS(est.list,
-                        file=paste0("./output/",
+                        file=paste0("./saved_output/",
                                     "save-est-list-A",
                                     intervention.A,
                                     "-recurrent",

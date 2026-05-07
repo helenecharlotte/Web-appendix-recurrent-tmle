@@ -3,9 +3,9 @@
 ## Author: Helene
 ## Created: May  7 2026 (13:47) 
 ## Version: 
-## Last-Updated: May  7 2026 (14:18) 
+## Last-Updated: May  7 2026 (14:24) 
 ##           By: Helene
-##     Update #: 8
+##     Update #: 9
 #----------------------------------------------------------------------
 ## 
 ### Commentary: 
@@ -40,7 +40,7 @@ source("./R/basis.fun.R")
 source("./R/fit.hal.R")
 source("./R/predict.hal.R")
 
-## simulation data from setting 1 in the paper: 
+## simulation data from setting 2 in the paper: 
 
 sim.dt <- sim.data.outer(n = 200, sim.setting = "7A", cens.percentage = "low", seed = 200)
 sim.dt 

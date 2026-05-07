@@ -1,7 +1,12 @@
 ### 04_make_figures.R --- 
 #----------------------------------------------------------------------
-## 
+##
+## This script assumes that processed simulation summary files
+## have already been generated and stored locally.
+##
 ### Code:
+
+
 
 library(ggplot2)
 library(gridExtra)

@@ -1,18 +1,5 @@
 ### 03_real_data_analysis.R --- 
 #----------------------------------------------------------------------
-## Author: Helene
-## Created: May  7 2026 (13:47) 
-## Version: 
-## Last-Updated: May  7 2026 (14:17) 
-##           By: Helene
-##     Update #: 9
-#----------------------------------------------------------------------
-## 
-### Commentary: 
-## 
-### Change Log:
-#----------------------------------------------------------------------
-## 
 ### Code:
 
 
@@ -108,6 +95,11 @@ est.hal.0 <-
                return.eic = TRUE,
                lambda.cvs = c((9:1)/10,(9:2)/10^2, seq(1/10^2, 1/10^5, length = 100)))
 
+est.hal.1[[1]]["tmle.est"]
+est.hal.1[[1]]["tmle.se"]
+
+est.hal.0[[1]]["tmle.est"]
+est.hal.0[[1]]["tmle.se"]
 
 est.hal.1[[1]]["tmle.est"] + 1.96*c(-1,1)*est.hal.1[[1]]["tmle.se"]
 est.hal.0[[1]]["tmle.est"] + 1.96*c(-1,1)*est.hal.0[[1]]["tmle.se"]
